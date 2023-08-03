@@ -1,0 +1,68 @@
+{
+    "Unknown":[
+        "Unknown",
+        "unknown"
+    ],
+    "Medical":[
+        "Medical Intensive Care Unit (MICU)",
+        "MICU",
+        "Medicine",
+        "Intensive Care Volwassenen"
+    ],
+    "Medical-Surgical":[
+        "Med-Surg ICU",
+        "Medical/Surgical Intensive Care Unit (MICU/SICU)"
+    ],
+    "Cardiac":[
+        "Cardiac Vascular Intensive Care Unit (CVICU)",
+        "Cardiac ICU",
+        "Cardiologie",
+        "Coronary Care Unit (CCU)",
+        "CCU-CTICU"
+    ],
+    "Surgical":[
+    	"Surgical Intensive Care Unit (SICU)",
+    	"SICU",
+    	"Vaatchirurgie",
+    	"Cardiochirurgie",
+    	"CSICU",
+    	"CTICU"
+    ],
+    "Trauma":[
+    	"Trauma SICU (TSICU)",
+    	"Traumatologie"
+    ],
+    "Gastrosurgery":[
+        "Maag-,Darm-,Leverziekten",
+        "Heelkunde Gastro-enterologie" 
+    ],
+    "Neurological":[
+        "Neuro ICU",
+        "Neurologie",
+        "Neurochirurgie",
+        "Neuro Surgical Intensive Care Unit (Neuro SICU)",
+        "Neuro Intermediate",
+        "Neuro Stepdown"
+    ],
+    "Other":[
+        "Inwendig",
+        "Heelkunde Oncologie",
+        "Heelkunde Longen/Oncologie",
+        "Oncologie Inwendig",
+        "Longziekte",
+        "Keel, Neus & Oorarts",
+        "Orthopedie",
+        "Hematologie",
+        "Urologie",
+        "Nefrologie",
+        "Gynaecologie",
+        "Plastische chirurgie",
+        "ders",
+        "PACU",
+        "Mondheelkunde",
+        "Verloskunde",
+        "Obstetrie",
+        "Oogheelkunde",
+        "Reumatologie"
+    ]
+}

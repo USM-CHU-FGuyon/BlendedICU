@@ -1,0 +1,55 @@
+{
+    "Other ICU":[
+        "ICU",
+        "Other ICU",
+        "CCU/IC of the same hospital",
+        "CCU/IC from other hospital"
+    ],
+    "Emergency":[
+        "EMERGENCY ROOM",
+        "Emergency Department",
+        "emergency department of the same hospital",
+        "emergency department from other hospital"
+    ],
+    "Direct Admit":[
+        "WALK-IN/SELF REFERRAL",
+        "Direct Admit",
+        "Home"    
+    ],
+    "Operating Room":[
+        "PROCEDURE SITE",
+        "AMBULATORY SURGERY TRANSFER",
+        "Operating Room",
+        "operating room from nuring ward of the same hospital",
+        "operating room from emergency department of the same hospital",
+        "PACU"
+    ],
+    "Other":[
+        "PHYSICIAN REFERRAL",
+        "TRANSFER FROM HOSPITAL",
+        "CLINIC REFERRAL",
+        "TRANSFER FROM SKILLED NURSING FACILITY",
+        "INTERNAL TRANSFER TO OR FROM PSYCH",
+        "Floor",
+        "Recovery Room",
+        "Step-Down Unit (SDU)",
+        "Other Hospital",
+        "Acute Care/Floor",
+        "Chest Pain Center",
+        "ICU to SDU",
+        "Observation",
+        "nursing department of the same hospital",
+        "special/medium care from the same hospital",
+        "recovery from the same hospital (only in case of unplanned IC admission)",
+        "nursing department from other hospital",
+        "special/medium care from other hospital",
+        "recovery from other hospital",
+        "Other",
+        "different location of the same hospital, transport by ambulance"    
+    ],
+    "Unknown":[
+        "INFORMATION NOT AVAILABLE",
+        "Unknown",
+        "unknown"
+    ]
+}

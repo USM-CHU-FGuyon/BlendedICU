@@ -1,0 +1,92 @@
+{
+    "Hospital":[
+        "ACUTE HOSPITAL",
+    	"Acute Care/Floor",
+    	"CHRONIC/LONG TERM ACUTE CARE",
+    	"Floor", 
+    	"HEALTHCARE FACILITY",
+    	"Other Hospital",
+    	"Step-Down Unit (SDU)",
+    	"Telemetry",
+    	"Other Internal"
+    ],
+    "Home":[
+        "HOME",
+    	"Home",
+    	"HOME HEALTH CARE"
+    ],
+    "Death":[
+        "DIED", 
+        "death",
+    	"Death",
+    	"Overleden",
+    	"HOSPICE"
+    ],
+    "Other ICU":[
+        "ICU",
+    	"Operating Room",
+    	"Other ICU",
+    	"Other ICU (CABG)"
+    ],
+    "Rehabilitation":[
+    	"REHAB",
+    	"Rehabilitation"
+    ],
+    "Nursing Facility":[
+        "ASSISTED LIVING",
+       	"SKILLED NURSING FACILITY", 
+       	"Skilled Nursing Facility",
+       	"Nursing Home"
+    ],
+    "Other":[
+    	"AGAINST ADVICE",
+    	"Other", 
+    	"Other External",
+    	"OTHER FACILITY",
+    	"PSYCH FACILITY"
+    ],
+    "Unknown":[
+        "unknown",
+    	"1", 
+    	"10", 
+    	"12", 
+    	"13", 
+    	"14", 	
+    	"15", 
+    	"16", 
+    	"17", 
+    	"18", 
+    	"19", 
+    	"2", 
+    	"20",
+        "22", 
+    	"23", 
+    	"25", 
+    	"26", 
+    	"27", 
+    	"29", 
+    	"3", 
+    	"31", 
+    	"32", 
+    	"33", 
+    	"35", 
+    	"36",
+        "37", 
+    	"38", 
+    	"4", 
+    	"40", 
+    	"41", 
+    	"42", 
+    	"44", 
+    	"45", 
+    	"46", 
+    	"47", 
+    	"48", 
+    	"49",
+        "5", 
+    	"50", 
+    	"51", 
+    	"8", 
+    	"9"
+    ]
+}
