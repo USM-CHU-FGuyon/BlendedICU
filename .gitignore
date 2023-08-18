@@ -1,0 +1,4 @@
+auxillary_files/OMOP_vocabulary/*csv
+__pycache__/
+*pyc
+auxillary_files/medications.json

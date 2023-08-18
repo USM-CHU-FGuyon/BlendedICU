@@ -16,8 +16,10 @@ import json
 
 from med_to_omop.omop_medications import OMOP_Medications
 from med_to_omop.medication_mapping import MedicationMapping
-
+from omop_cdm import omop_parquet 
 pth_dic = json.load(open('paths.json', 'r'))
+
+omop_parquet.convert_to_parquet(pth_dic)
 
 om = OMOP_Medications(pth_dic)
 
@@ -25,4 +27,4 @@ ingredient_to_drug = om.run()
 
 mm = MedicationMapping(pth_dic)
 
-medication_json = mm.run(load_drugnames=False, fname='medications.json')
+medication_json = mm.run(load_drugnames=True, fname='medications.json')

@@ -503,7 +503,7 @@ class TimeseriesPreprocessing(DataProcessor):
         """
         Saves a table to parquet. The user may specify a pyarrow schema.
         """
-        Path(ts_savepath).mkdir(exist_ok=True)
+        Path(ts_savepath).mkdir(exist_ok=True, parents=True)
 
         patient_ts = (timeseries.reset_index(drop=True)
                                 .set_index('patient')

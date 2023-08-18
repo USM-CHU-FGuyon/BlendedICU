@@ -261,7 +261,7 @@ class MedicationMapping(meds):
         medications_json = {}
         for name, aliases in self.drug_mapping.items():
             print(name)
-            print(f'  -> Looking for {len(aliases)} aliases...')
+            print(f'  -> Looking for {len(aliases.dropna())} aliases...')
             df_al = []
 
             medications_json[name] = {'blended': [],
