@@ -66,7 +66,8 @@ class FlatAndLabelsProcessor(DataProcessor):
         """
         Gets the sorted list of patients having timeseries data.
         """
-        preprocessed_ts_dir = self.savepath+'partially_processed_timeseries/'
+        preprocessed_ts_dir = Path(self.savepath+'partially_processed_timeseries/')
+        preprocessed_ts_dir.mkdir(exist_ok=True, parents=True)
         stems = [f.stem for f in Path(preprocessed_ts_dir).iterdir()]
         try:
             ts_patients = pd.to_numeric(stems, downcast='integer')

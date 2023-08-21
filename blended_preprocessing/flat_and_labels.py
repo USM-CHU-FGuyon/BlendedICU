@@ -121,7 +121,9 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                     .pipe(self.clip_and_norm,
                           cols=['age', 'raw_height', 'raw_weight'],
                           clip=self.FLAT_CLIP,
-                          normalize=self.FLAT_NORMALIZE))
+                          normalize=self.FLAT_NORMALIZE,
+                          recompute_quantiles=True
+                          ))
 
         return labels_blended, flat
 

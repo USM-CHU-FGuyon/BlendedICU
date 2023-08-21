@@ -11,7 +11,7 @@ mimic_prep = mimicPreparator(
     chartevents_pth='/icu/chartevents.csv.gz',                         
     labevents_pth='/hosp/labevents.csv.gz')
 
-#mimic_prep.load_raw_tables()
+mimic_prep.load_raw_tables()
 
 mimic_prep.gen_labels()
 mimic_prep.gen_flat()
