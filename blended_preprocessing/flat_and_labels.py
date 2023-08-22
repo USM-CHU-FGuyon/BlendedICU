@@ -93,13 +93,15 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
         labels_blended = (labels_blended.set_index(self.idx_col)
                                         .pipe(_take_sample,
                                               size=self.size)
-                                        .pipe(self.clip_and_norm,
-                                              cols=['height', 'weight'],
-                                              clip=self.FLAT_CLIP,
-                                              normalize=self.FLAT_NORMALIZE)
-                                        .pipe(self._fill_flat,
+                                        .groupby('source_dataset')
+                                        .apply(self._fill_flat,
                                               cols=['height', 'weight'])
-                                        .astype({'age': int,
+                                        .pipe(self.clip_and_norm,
+                                              cols=['height', 'weight', 'age'],
+                                              clip=self.FLAT_CLIP,
+                                              normalize=self.FLAT_NORMALIZE,
+                                              recompute_quantiles=True)
+                                        .astype({'age': float,
                                                  'raw_weight': float,
                                                  'raw_height': float,
                                                  'uniquepid': str,
@@ -108,24 +110,15 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                                  'mortality': int,
                                                  'lengthofstay': float,
                                                  'origin': str,
-                                                 'care_site': str}))
+                                                 'care_site': str})
+                                        .droplevel(0))
 
         flat = labels_blended.loc[:, ['age',
                                       'sex',
-                                      'raw_height',
-                                      'raw_weight',
+                                      'height',
+                                      'weight',
                                       'from_US',
                                       'source_dataset']]
-
-        flat = (flat.groupby('source_dataset')
-                    .apply(self._fill_flat,
-                           cols=['raw_height', 'raw_weight'])
-                    .pipe(self.clip_and_norm,
-                          cols=['age', 'raw_height', 'raw_weight'],
-                          clip=self.FLAT_CLIP,
-                          normalize=self.FLAT_NORMALIZE,
-                          recompute_quantiles=True
-                          ))
 
         return labels_blended, flat
 
