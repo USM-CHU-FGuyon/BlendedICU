@@ -41,7 +41,6 @@ class blendedicuTSP(TimeseriesPreprocessing):
         for i, pths in enumerate(self.pth_chunks):
             comp_quantiles = i == 0
             self.timeseries = self.load(pths)
-            print(self.cols)
             timeseries = self.timeseries.loc[:, self.cols.index]
 
             timeseries = (timeseries.pipe(self.clip_and_norm,

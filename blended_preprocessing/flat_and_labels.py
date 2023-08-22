@@ -97,6 +97,8 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                               cols=['height', 'weight'],
                                               clip=self.FLAT_CLIP,
                                               normalize=self.FLAT_NORMALIZE)
+                                        .pipe(self._fill_flat,
+                                              cols=['height', 'weight'])
                                         .astype({'age': int,
                                                  'raw_weight': float,
                                                  'raw_height': float,
