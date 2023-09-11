@@ -228,6 +228,8 @@ class DataProcessor(object):
         if clip and normalize:
             df[cols] = (2 * (df[cols]-mins) / (maxs-mins) - 1).clip(lower=-4,
                                                                     upper=4)
+            self.clipping_quantiles = (-mins/mins, 2*(meds-mins) / (maxs-mins) - 1, maxs/maxs)
+
         elif clip:
             low = meds - 4*(meds - mins)
             up = meds + 4*(maxs - meds)

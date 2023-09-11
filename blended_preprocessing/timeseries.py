@@ -31,8 +31,7 @@ class blendedicuTSP(TimeseriesPreprocessing):
         Applies the processing pipeline to the 'partially_processed_timeseries'
         files. These files are already resampled 
         """
-        scalecols = [c for c in self.cols[self.dataset]
-                     if c not in self.kept_med+['time', 'hour']]
+        scalecols = [c for c in self.numeric_ts if c not in ['time', 'hour']]
 
         self.reset_dir()
 
@@ -60,5 +59,4 @@ class blendedicuTSP(TimeseriesPreprocessing):
         The time column is initially in seconds.
         """
         timeseries['time'] = (timeseries['time']/3600).astype(int)
-        timeseries = timeseries.groupby(['patient', 'time']).mean()
         return timeseries
