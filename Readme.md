@@ -1,5 +1,20 @@
 Welcome to the BlendedICU code repository
 ===
+This is the repository from [Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset](https://www.sciencedirect.com/science/article/abs/pii/S153204642300223X)
+```
+@article{Oliver2023Introducing,
+title = {Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset},
+journal = {Journal of Biomedical Informatics},
+volume = {146},
+pages = {104502},
+year = {2023},
+issn = {1532-0464},
+doi = {https://doi.org/10.1016/j.jbi.2023.104502},
+url = {https://www.sciencedirect.com/science/article/pii/S153204642300223X},
+author = {Matthieu Oliver and Jérôme Allyn and Rémi Carencotte and Nicolas Allou and Cyril Ferdynus},
+keywords = {OMOP common data format, Intensive care unit database, Data integration}
+}
+```
 This repository contains the codes and files that allow the creation of the 
 BlendedICU dataset from the AmsterdamUMCdb, eICU, HiRID, and MIMIC-IV databases.
 
