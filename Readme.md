@@ -108,7 +108,7 @@ Run `0_prepare_files.py` to create the medication mapping file. The default outp
 #### Step 2. Harmonization
 `2_{dataset}.py` runs the harmonization pipeline, it utilises the TimeseriesProcessor and FlatAndLabelsProcessor objects.
 1. The timeseries are harmonized to common labels and units between all databases. Some user-defined bounds are applied to the data. The raw harmonized data is saved in the `formatted_timeseries/` and `formatted_medications/` directories. Then, these timeseries are resampled to hourly data and saved to the `partially_processed_timeseries/` directory.
-2. Flat categorical variables are mapped to standardized categories. Flat numerical vairables such as tength of stay, heights, weights are converted to the same units. Finally an index for each icu stay that is unique in the BlendedICU dataset, it is constituted as follows: {source_database}-{stay_id_in_source_database}
+2. Flat categorical variables are mapped to standardized categories. Flat numerical vairables such as length of stay, heights, weights are converted to the same units. Finally an index for each icu stay that is unique in the BlendedICU dataset, it is constituted as follows: {source_database}-{stay_id_in_source_database}
 
 #### Step 3. BlendedICU processing
 `3_BlendedICU.py` utilises the TimeseriesProcessor and FlatAndLabelsProcessor objects. It runs a customizable processing pipeline using the partially-processed files from the harmonization step.
