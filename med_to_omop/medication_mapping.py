@@ -23,7 +23,7 @@ class meds(object):
 class Eicu_meds(meds):
     def __init__(self, pth_dic):
         super().__init__(pth_dic, name='eicu')
-
+        
     def get(self):
         print('Loading eICU medications...')
         patients_pth = self.datadir+'patient.csv.gz'
@@ -65,6 +65,7 @@ class Eicu_meds(meds):
                                       'index': 'drugname'}))
 
         self.save(eicu_meds)
+        eicu_meds['dataset'] = self.name
         return eicu_meds
 
 
@@ -134,6 +135,7 @@ class Hirid_meds(meds):
                                        'index': 'drugname'}))
 
         self.save(hirid_meds)
+        hirid_meds['dataset'] = self.name
         return hirid_meds
 
 
@@ -163,14 +165,16 @@ class Amsterdam_meds(meds):
                                       on='admissionid',
                                       how='outer')
                           .item
-                          .value_counts()/n_patients)
+                          .value_counts()
+                          .div(n_patients))
 
         amsterdam_meds = (pd.DataFrame(amsterdam_meds)
                           .reset_index()
-                          .rename(columns={'drugname': 'drugcount',
+                          .rename(columns={'item': 'drugcount',
                                            'index': 'drugname'}))
 
         self.save(amsterdam_meds)
+        amsterdam_meds['dataset'] = self.name
         return amsterdam_meds
 
 
@@ -210,12 +214,67 @@ class Mimic_meds(meds):
                                  mimic_fluids,
                                  mimic_col])
                       .sort_values(ascending=False))
-        self.save(mimic_meds)
-        return (pd.DataFrame(mimic_meds)
-                .reset_index()
-                .rename(columns={'drugname': 'drugcount',
-                                 'index': 'drugname'}))
 
+        mimic_meds = (pd.DataFrame(mimic_meds)
+                      .reset_index()
+                      .rename(columns={'label': 'drugcount',
+                                       'index': 'drugname'}))
+        self.save(mimic_meds)
+        mimic_meds['dataset'] = self.name
+        return mimic_meds
+
+class Mimic3_meds(meds):
+    def __init__(self, pth):
+        super().__init__(pth, name='mimic3')
+        
+    def get(self):
+        print('Loading MIMIC-III medications...')
+        pth_meds_cv = self.datadir+'INPUTEVENTS_CV.csv.gz'
+        pth_meds_mv = self.datadir+'INPUTEVENTS_MV.csv.gz'
+        pth_d_items = self.datadir+'D_ITEMS.csv.gz'
+        pth_patients = self.datadir+'ICUSTAYS.csv.gz'
+
+        patients = pd.read_csv(pth_patients, usecols=['ICUSTAY_ID'])
+        meds_cv = pd.read_csv(pth_meds_cv, usecols=['ICUSTAY_ID', 'ITEMID'])
+        meds_mv = pd.read_csv(pth_meds_mv, usecols=['ICUSTAY_ID', 'ITEMID'])
+        d_items = pd.read_csv(pth_d_items, usecols=['LABEL',
+                                                    'ITEMID',
+                                                    'CATEGORY'])
+
+        n_patients = patients.ICUSTAY_ID.nunique()
+        
+        meds = pd.concat([meds_cv, meds_mv])
+        
+        df = (meds.drop_duplicates()
+                  .merge(d_items, on='ITEMID'))
+
+        mimic3_medications = (df.loc[df.CATEGORY=='Medications', 'LABEL']
+                               .value_counts()
+                               .div(n_patients))
+        mimic3_antibio = (df.loc[df.CATEGORY=='Antibiotics', 'LABEL']
+                           .value_counts()
+                           .div(n_patients))
+        mimic3_fluids = (df.loc[df.CATEGORY=='Fluids/Intake', 'LABEL']
+                          .value_counts()
+                          .div(n_patients))
+        mimic3_col = (df.loc[df.CATEGORY=='Blood Products/Colloids', 'LABEL']
+                     .value_counts()
+                     .div(n_patients))
+
+        mimic3_meds = (pd.concat([mimic3_medications,
+                                  mimic3_antibio,
+                                  mimic3_fluids,
+                                  mimic3_col])
+                      .sort_values(ascending=False))
+        
+        mimic3_meds = (pd.DataFrame(mimic3_meds)
+                .reset_index()
+                .rename(columns={'index': 'drugname',
+                                 'LABEL': 'drugcount'}))
+        self.save(mimic3_meds)
+        mimic3_meds['dataset'] = self.name
+        return mimic3_meds
+        
 
 class MedicationMapping(meds):
     def __init__(self, pth_dic):
@@ -226,23 +285,27 @@ class MedicationMapping(meds):
         self.manual_addings = pd.read_csv(pth_manual, sep=';')
         self.drug_mapping = pd.concat([self.ohdsi, self.manual_addings])
 
+        self._mimic3_meds = Mimic3_meds(self.pth_dic)
+        self._eicu_meds = Eicu_meds(self.pth_dic)
+        self._mimic_meds = Mimic_meds(self.pth_dic)
+        self._hirid_meds = Hirid_meds(self.pth_dic)
+        self._amsterdam_meds = Amsterdam_meds(self.pth_dic)
+
     def _get_drugnames(self):
-        eicu_meds = Eicu_meds(self.pth_dic).get()
-        mimic_meds = Mimic_meds(self.pth_dic).get()
-        hirid_meds = Hirid_meds(self.pth_dic).get()
-        amsterdam_meds = Amsterdam_meds(self.pth_dic).get()
-
-        self.eicu_meds = eicu_meds
-
-        eicu_meds['dataset'] = 'eicu'
-        mimic_meds['dataset'] = 'mimic'
-        hirid_meds['dataset'] = 'hirid'
-        amsterdam_meds['dataset'] = 'amsterdam'
-
-        df = pd.concat([eicu_meds, mimic_meds, hirid_meds, amsterdam_meds])
+        mimic3_meds = self._mimic3_meds.get()        
+        eicu_meds = self._eicu_meds.get()        
+        mimic_meds = self._mimic_meds.get()        
+        hirid_meds = self._hirid_meds.get()
+        amsterdam_meds = self._amsterdam_meds.get()        
+        
+        df = pd.concat([eicu_meds,
+                             mimic_meds,
+                             mimic3_meds,
+                             hirid_meds,
+                             amsterdam_meds])
 
         df.to_parquet(self.med_mapping_pth+'drugnames.parquet')
-        return df
+        return self.df
 
     def run(self, load_drugnames=True, fname='medications.json'):
 
@@ -268,7 +331,8 @@ class MedicationMapping(meds):
                                       'amsterdam': [],
                                       'eicu': [],
                                       'hirid': [],
-                                      'mimic': []}
+                                      'mimic': [],
+                                      'mimic3': []}
             aliases = (pd.concat([pd.Series([name]), aliases])
                          .dropna().drop_duplicates())
             aliases = ' ' + aliases + ' '
@@ -288,6 +352,7 @@ class MedicationMapping(meds):
             except KeyError:
                 self.concept_id = 0
             medications_json[name]['blended'] = self.concept_id
+        
         json.dump(medications_json,
                   open(self.aux_pth+fname, 'w'),
                   indent=4,
