@@ -43,16 +43,6 @@ class Ams_FLProcessor(FlatAndLabelsProcessor):
         super().__init__(dataset='amsterdam')
 
         self.labels = self.load(f'{self.parquet_pth}/labels.parquet')
-        self.flat = self.load(f'{self.parquet_pth}/labels.parquet',
-                              columns=['admissionid',
-                                       'urgency',
-                                       'location',
-                                       'origin',
-                                       'gender',
-                                       'agegroup',
-                                       'weightgroup',
-                                       'heightgroup',
-                                       'specialty'])
 
         self.gender_mapping = {'Man': 1,
                                'Vrouw': 0,
@@ -111,24 +101,4 @@ class Ams_FLProcessor(FlatAndLabelsProcessor):
 
         labels['origin'] = (labels['origin'].pipe(_translate_origin))
         labels['care_site'] = 'Amsterdam University Medical Center'
-        return labels, self.flat
-
-    def preprocess_flat(self):
-        flat = self.flat
-
-        cat = ['specialty', 'location', 'origin']
-        num = ['agegroup', 'heightgroup', 'weightgroup']
-
-        flat = (flat.fillna({'gender': 'unknown'})
-                    .replace({'gender': self.gender_mapping})
-                    .pipe(self.categorical_dummies, cols=cat)
-                    .rename(columns={'admissionid': self.idx_col})
-                    .set_index(self.idx_col)
-                    .pipe(self._decategorize, cols=num)
-                    .pipe(self.medianfill, cols=num))
-
-        nunique = flat.nunique()
-        scalecols = nunique[nunique > 2].index
-        flat = (flat.pipe(self.clip_and_norm, cols=scalecols)
-                    .sort_index())
-        return flat
+        return labels

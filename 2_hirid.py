@@ -15,4 +15,4 @@ tsp.run()
 
 flp = Hir_FLProcessing()
 
-flp.run()
+flp.run_labels()

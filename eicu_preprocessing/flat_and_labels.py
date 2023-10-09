@@ -42,7 +42,7 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
         return flat
 
     def preprocess_labels(self):
-        flat = self.flat
+        flat = self.preprocess_flat()
         labels = self.labels
 
         labels = (labels.replace({'unitdischargestatus': {'Expired': 1,
@@ -74,4 +74,4 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
                         label_los_col='unitdischargeoffset',
                         unit='minute'))
 
-        return labels, flat.drop(columns='origin')
+        return labels

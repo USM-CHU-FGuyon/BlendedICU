@@ -13,12 +13,6 @@ class FlatAndLabelsProcessor(DataProcessor):
         self.labels = None
         self.ts_patients = self.get_ts_patients()
 
-    def preprocess_flat(self):
-        """
-        This should be defined in each subclass.
-        """
-        raise NotImplementedError
-
     def preprocess_labels(self):
         """
         This should be defined in each subclass.
@@ -93,12 +87,8 @@ class FlatAndLabelsProcessor(DataProcessor):
         self.save(self.labels, f'{self.savepath}preprocessed_labels.parquet')
         return self.labels
         
-    def run(self):
-        raise DeprecationWarning('Use run_labels instead !')
-        
-        self.flat = self.preprocess_flat()
-
-        self.labels, self.flat = self.preprocess_labels()
+    def run_flat_and_labels(self):        
+        self.labels, self.flat = self.preprocess_flat_and_labels()
 
         print(f'Initial number of admissions : {len(self.labels)}')
         if self.dataset != 'blended':

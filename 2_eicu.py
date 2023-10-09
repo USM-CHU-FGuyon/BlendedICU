@@ -19,4 +19,4 @@ tsp.run()
 
 flp = eicu_FLProcessor()
 
-flp.run()
+flp.run_labels()

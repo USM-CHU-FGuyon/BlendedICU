@@ -17,4 +17,4 @@ tsp.run()
 
 flp = mimic_FLProcessor()
 
-flp.run()
+flp.run_labels()

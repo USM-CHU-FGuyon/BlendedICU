@@ -10,13 +10,13 @@ are optional and customizable using the config.json file.
 from blended_preprocessing.timeseries import blendedicuTSP
 from blended_preprocessing.flat_and_labels import blended_FLProcessor
 
-flp = blended_FLProcessor(datasets=['hirid',
+flp = blended_FLProcessor(datasets=['mimic3',
+                                    'hirid',
                                     'amsterdam',
                                     'mimic',
-                                    'eicu'
-                                    ])
+                                    'eicu'])
 
-flp.run()
+flp.run_flat_and_labels()
 
 tsp = blendedicuTSP()
 

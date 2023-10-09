@@ -16,4 +16,4 @@ tsp.run()
 
 flp = Ams_FLProcessor()
 
-flp.run()
+flp.run_labels()

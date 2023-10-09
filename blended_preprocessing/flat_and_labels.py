@@ -35,7 +35,7 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
             return self.medianfill(df, **kwargs)
         return df
 
-    def preprocess_labels(self):
+    def preprocess_flat_and_labels(self):
         """
         Generates the flat variables from the labels.parquet files of each
         source database.
@@ -110,8 +110,7 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                                  'mortality': int,
                                                  'lengthofstay': float,
                                                  'origin': str,
-                                                 'care_site': str})
-                                        .droplevel(0))
+                                                 'care_site': str}))
 
         flat = labels_blended.loc[:, ['age',
                                       'sex',
@@ -122,5 +121,3 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
 
         return labels_blended, flat
 
-    def preprocess_flat(self):
-        pass

@@ -42,12 +42,4 @@ class Hir_FLProcessing(FlatAndLabelsProcessor):
                   .dropna(subset=['mortality'])
                   .astype({'uniquepid': str,
                            'age': float}))
-        return labels, self.flat
-
-    def preprocess_flat(self):
-        flat = self.labels.loc[:, ['age', 'sex']]
-
-        flat = (flat.replace({'sex': {'M': 1, 'F': 0}})
-                    .astype({'age': int})
-                    .pipe(self.clip_and_norm, cols=['age']))
-        return flat
+        return labels

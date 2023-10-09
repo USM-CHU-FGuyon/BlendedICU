@@ -7,8 +7,7 @@ class mimic_FLProcessor(FlatAndLabelsProcessor):
         self.flat = self.load(self.flat_savepath)
         self.labels = self.load(self.labels_savepath)
 
-    def preprocess_flat(self):
-
+    def preprocess_labels(self):
         flat = (self.flat.rename(columns={'stay_id': self.idx_col})
                     .set_index(self.idx_col)
                     .sort_index())
@@ -26,11 +25,7 @@ class mimic_FLProcessor(FlatAndLabelsProcessor):
                     .pipe(self.medianfill,
                           cols=['height', 'weight'])
                 )
-
-        return flat
-
-    def preprocess_labels(self):
-        flat = self.flat
+        
         labels = (self.labels.rename(columns={
                                         'stay_id': self.idx_col,
                                         'subject_id': 'uniquepid',
@@ -50,6 +45,4 @@ class mimic_FLProcessor(FlatAndLabelsProcessor):
         labels['weight'] = flat['weight']
         labels['origin'] = flat['origin']
 
-        flat = flat.drop(columns='origin')
-
-        return labels, flat
+        return labels

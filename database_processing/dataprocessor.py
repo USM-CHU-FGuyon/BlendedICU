@@ -17,7 +17,6 @@ class DataProcessor:
 
         self.aux_pth = self.pth_dic['auxillary_files']
         self.savepath = self.pth_dic[self.dataset]
-        self.results_pth = self.pth_dic['results']
         self.voc_pth = self.pth_dic['vocabulary']
         self.user_input_pth = self.pth_dic['user_input']
         self.parquet_pth = f'{self.savepath}{self.dataset}_parquet/'
