@@ -26,6 +26,19 @@ class mimicPreparator(DataPreparator):
         self.outputevents_savepath = f'{self.parquet_pth}/timeseriesoutputs.parquet'
         self.col_los = 'los'
         self.unit_los = 'day'
+        self.icustays = self._icustays()
+        
+    def _icustays(self):
+        admissions = pd.read_parquet(self.admissions_pth,
+                                     columns=['hadm_id',
+                                              'ethnicity',
+                                              'admission_location',
+                                              'insurance',
+                                              'discharge_location',
+                                              'hospital_expire_flag'])
+        icustays = pd.read_parquet(self.icustays_pth)
+
+        return icustays.merge(admissions, on='hadm_id')
 
     def load_raw_tables(self):
         """
@@ -118,16 +131,9 @@ class mimicPreparator(DataPreparator):
                                             'gender',
                                             'anchor_age'])
 
-        admissions = pd.read_parquet(self.admissions_pth,
-                                     columns=['hadm_id',
-                                              'ethnicity',
-                                              'admission_location',
-                                              'insurance'])
-        icustays = pd.read_parquet(self.icustays_pth)
-
         self.heights, self.weights = self._fetch_heights_weights()
 
-        df_flat = (icustays.merge(admissions, on='hadm_id', how='left')
+        df_flat = (self.icustays
                            .merge(patients, on='subject_id', how='left')
                            .merge(self.heights, on='stay_id', how='left')
                            .merge(self.weights, on='stay_id', how='left')
@@ -181,17 +187,6 @@ class mimicPreparator(DataPreparator):
         return self.save(self.med, self.med_savepath)
 
     def gen_labels(self):
-        admissions = pd.read_parquet(self.admissions_pth,
-                                     columns=['hadm_id',
-                                              'ethnicity',
-                                              'admission_location',
-                                              'insurance',
-                                              'discharge_location',
-                                              'hospital_expire_flag'])
-        icustays = pd.read_parquet(self.icustays_pth)
-
-        self.icustays = icustays.merge(admissions, on='hadm_id')
-
         print('o Labels')
         labels = self.icustays.loc[:, ['subject_id', 'hadm_id',
                                        'stay_id', 'los', 'intime',

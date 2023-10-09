@@ -7,7 +7,7 @@ import shutil
 import pandas as pd
 
 
-class DataProcessor(object):
+class DataProcessor:
     def __init__(self, dataset):
         self.dataset = dataset
         self.SEED = 974
@@ -21,17 +21,18 @@ class DataProcessor(object):
         self.voc_pth = self.pth_dic['vocabulary']
         self.user_input_pth = self.pth_dic['user_input']
         self.parquet_pth = f'{self.savepath}{self.dataset}_parquet/'
+        Path(self.parquet_pth).mkdir(exist_ok=True, parents=True)
         try:
             self.source_pth = self.pth_dic[f'{self.dataset}_source_path']
         except KeyError:
             self.source_pth = None
         
-        self.med_file = self.aux_pth+'medications_v9.json'
+        self.med_file = self.aux_pth+'medications_v10.json'
         self.unittype_file = self.user_input_pth+'unit_type_v2.json'
         self.dischargeloc_file = self.user_input_pth+'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth+'admission_origins_v2.json'
 
-        self.datasets = ['eicu', 'mimic', 'hirid', 'amsterdam']
+        self.datasets = ['eicu', 'mimic', 'mimic3', 'hirid', 'amsterdam']
         
         self.ohdsi_med = self._read_json(self.med_file)
         self.med_concept_id = self._med_concept_id_mapping()
