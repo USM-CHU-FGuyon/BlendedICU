@@ -3,6 +3,8 @@
         "ACUTE HOSPITAL",
     	"Acute Care/Floor",
     	"CHRONIC/LONG TERM ACUTE CARE",
+	"SHORT TERM HOSPITAL",
+	"LONG TERM CARE HOSPITAL",
     	"Floor", 
     	"HEALTHCARE FACILITY",
     	"Other Hospital",
@@ -13,14 +15,18 @@
     "Home":[
         "HOME",
     	"Home",
-    	"HOME HEALTH CARE"
+    	"HOME HEALTH CARE",
+	"HOME WITH HOME IV PROVIDR"
     ],
     "Death":[
         "DIED", 
         "death",
     	"Death",
     	"Overleden",
-    	"HOSPICE"
+    	"HOSPICE",
+	"DEAD/EXPIRED",
+	"HOSPICE-HOME",
+	"HOSPICE-MEDICAL FACILITY"
     ],
     "Other ICU":[
         "ICU",
@@ -30,11 +36,13 @@
     ],
     "Rehabilitation":[
     	"REHAB",
-    	"Rehabilitation"
+    	"Rehabilitation",
+	"REHAB/DISTINCT PART HOSP"
     ],
     "Nursing Facility":[
         "ASSISTED LIVING",
-       	"SKILLED NURSING FACILITY", 
+       	"SKILLED NURSING FACILITY",
+	"SNF", 
        	"Skilled Nursing Facility",
        	"Nursing Home"
     ],
@@ -43,7 +51,13 @@
     	"Other", 
     	"Other External",
     	"OTHER FACILITY",
-    	"PSYCH FACILITY"
+    	"PSYCH FACILITY",
+	"DISC-TRAN CANCER/CHLDRN H",
+	"DISCH-TRAN TO PSYCH HOSP",
+	"DISC-TRAN TO FEDERAL HC",
+	"SNF-MEDICAID ONLY CERTIF",
+	"LEFT AGAINST MEDICAL ADVI",
+	"ICF"
     ],
     "Unknown":[
         "unknown",

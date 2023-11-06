@@ -9,6 +9,7 @@ class mimic3_FLProcessor(FlatAndLabelsProcessor):
         self.flat = self.load(self.flat_savepath)
         self.labels = self.load(self.labels_savepath)
         self.seconds_in_a_year = 3.154e+7
+        
     def preprocess_labels(self):
         
         flat = (self.flat.rename(columns={'ICUSTAY_ID': self.idx_col})
@@ -30,19 +31,22 @@ class mimic3_FLProcessor(FlatAndLabelsProcessor):
                                         'ICUSTAY_ID': self.idx_col,
                                         'SUBJECT_ID': 'uniquepid',
                                         'HOSPITAL_EXPIRE_FLAG': self.mor_col,
-                                        'FIRST_CAREUNIT': 'unit_type'})
+                                        'FIRST_CAREUNIT': 'unit_type',
+                                        'DISCHARGE_LOCATION': 'discharge_location',
+                                        'INTIME': 'intime',
+                                        'LOS': 'los',
+                                        'HADM_ID': 'hadm_id'})
                   .set_index(self.idx_col)
                   .pipe(self.harmonize_los,
-                        label_los_col='LOS')
-                  .dropna(subset='INTIME')
-                  .astype({'uniquepid': str, 'HADM_ID': str})
+                        label_los_col='los')
+                  .dropna(subset='intime')
+                  .astype({'uniquepid': str, 'hadm_id': str})
                   .sort_index())
 
-
-        age = pd.concat([pd.to_datetime(labels['INTIME']).dt.date,
+        age = pd.concat([pd.to_datetime(labels['intime']).dt.date,
                         pd.to_datetime(flat['DOB']).dt.date], 
                        axis=1).dropna()
-        age['age'] = ((age['INTIME'] - age['DOB'])
+        age['age'] = ((age['intime'] - age['DOB'])
                       .apply(lambda x: x.total_seconds()/self.seconds_in_a_year)
                       .astype(int))
         

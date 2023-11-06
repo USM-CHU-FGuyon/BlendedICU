@@ -18,7 +18,8 @@
         "Cardiac ICU",
         "Cardiologie",
         "Coronary Care Unit (CCU)",
-        "CCU-CTICU"
+        "CCU-CTICU",
+	"CCU"
     ],
     "Surgical":[
     	"Surgical Intensive Care Unit (SICU)",
@@ -26,11 +27,13 @@
     	"Vaatchirurgie",
     	"Cardiochirurgie",
     	"CSICU",
-    	"CTICU"
+    	"CTICU",
+	"CSRU"
     ],
     "Trauma":[
     	"Trauma SICU (TSICU)",
-    	"Traumatologie"
+    	"Traumatologie",
+	"TSICU"
     ],
     "Gastrosurgery":[
         "Maag-,Darm-,Leverziekten",
@@ -42,7 +45,8 @@
         "Neurochirurgie",
         "Neuro Surgical Intensive Care Unit (Neuro SICU)",
         "Neuro Intermediate",
-        "Neuro Stepdown"
+        "Neuro Stepdown",
+	"NICU"
     ],
     "Other":[
         "Inwendig",

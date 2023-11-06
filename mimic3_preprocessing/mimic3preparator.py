@@ -187,7 +187,9 @@ class mimic3Preparator(DataPreparator):
 
         return (inputevents.merge(d_items[['ITEMID', 'LABEL']], on='ITEMID')
                 .drop(columns=['HADM_ID', 'ITEMID'])
-                .rename(columns={'STARTTIME': 'time'}))
+                .rename(columns={'STARTTIME': 'time'})
+                .dropna(subset='ICUSTAY_ID')
+                .astype({'ICUSTAY_ID': int}))
 
     def gen_medication(self):
         """

@@ -110,7 +110,8 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                                  'mortality': int,
                                                  'lengthofstay': float,
                                                  'origin': str,
-                                                 'care_site': str}))
+                                                 'care_site': str})
+                                        .droplevel('source_dataset'))
 
         flat = labels_blended.loc[:, ['age',
                                       'sex',

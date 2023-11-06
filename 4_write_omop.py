@@ -13,7 +13,7 @@ from blended_preprocessing.omop_conversion import OMOP_converter
 
 c = OMOP_converter(initialize_tables=True)
 
-#c.measurement_table()
+c.measurement_table()
 
 c.drug_exposure_table()
 

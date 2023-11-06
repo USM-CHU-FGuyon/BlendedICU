@@ -222,6 +222,7 @@ class TimeseriesPreprocessing(DataProcessor):
         self.save_timeseries(timeseries,
                              self.formatted_ts_dir, 
                              pyarrow_schema=ts_schema)
+
         self.save_timeseries(med,
                              self.formatted_med_dir,
                              pyarrow_schema=med_schema)
@@ -378,7 +379,7 @@ class TimeseriesPreprocessing(DataProcessor):
         df = self.df_resampler.join(df, how='outer')
 
         df['new_time'] = df.groupby(level=0).new_time.ffill()
-
+        
         df = (df.droplevel(1)
                 .rename(columns={'new_time': self.time_col})
                 .set_index(self.time_col, append=True)
@@ -616,7 +617,8 @@ class TimeseriesPreprocessing(DataProcessor):
         mask = (data.notna()
                     .groupby('patient')
                     .apply(self._apply_mask_decay)
-                    .add_suffix('_mask'))
+                    .add_suffix('_mask')
+                    .droplevel(0))
         return pd.concat([data, mask], axis=1)
 
     def _add_hour(self, timeseries, admission_hours):

@@ -31,16 +31,21 @@ class DataProcessor:
         self.dischargeloc_file = self.user_input_pth+'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth+'admission_origins_v2.json'
 
-        self.datasets = ['eicu', 'mimic', 'mimic3', 'hirid', 'amsterdam']
+        self.datasets = ('eicu', 'mimic', 'mimic3', 'hirid', 'amsterdam')
         
         self.ohdsi_med = self._read_json(self.med_file)
         self.med_concept_id = self._med_concept_id_mapping()
         self.formatted_ts_dir_blended = self.pth_dic['blended']+'formatted_timeseries/'
 
-        self.formatted_ts_dirs = ({d: f'{self.pth_dic["blended"]}/formatted_timeseries/{d}/' for d in self.datasets}
-                                  | {'blended': f'{self.pth_dic["blended"]}/formatted_timeseries/'})
-        self.formatted_med_dirs = ({d: f'{self.pth_dic["blended"]}/formatted_medications/{d}/' for d in self.datasets}
-                                   | {'blended': f'{self.pth_dic["blended"]}/formatted_medications/'})
+        blended_formatted_ts = self.pth_dic["blended"] + '/formatted_timeseries/'
+        blended_formatted_med = self.pth_dic["blended"] + '/formatted_medications/'
+
+        self.formatted_ts_dirs = ({d: f'{blended_formatted_ts}/{d}/' for d in self.datasets}
+                                  | {'blended': blended_formatted_ts})
+        
+        self.formatted_med_dirs = ({d: f'{blended_formatted_med}/{d}/' for d in self.datasets}
+                                   | {'blended': blended_formatted_med})
+        
         self.formatted_ts_dir = self.formatted_ts_dirs[self.dataset]
         self.formatted_med_dir = self.formatted_med_dirs[self.dataset]
         self.preprocessed_ts_dir = self.savepath+'preprocessed_timeseries/'
@@ -75,6 +80,18 @@ class DataProcessor:
         self.med_savepath = f'{self.parquet_pth}/medication.parquet'
         self.labels_savepath = f'{self.parquet_pth}/labels.parquet'
         self.flat_savepath = f'{self.parquet_pth}/flat_features.parquet'
+
+    def _concat(self, df1, df2):
+        return ([df1.copy()] if df2.empty 
+                else [df2.copy()] if df1.empty
+                else [pd.concat([df1, df2])])
+    
+    def concat(self, df_list):
+        if not isinstance(df_list, list):
+            raise ValueError('Argument should be a list of DataFrames')
+        while len(df_list)>1:
+            df_list = self._concat(*df_list[:2]) + df_list[2:]
+        return df_list[0]
 
     def _med_concept_id_mapping(self):
         dic = {ing: m['blended'] for ing, m in self.ohdsi_med.items()}

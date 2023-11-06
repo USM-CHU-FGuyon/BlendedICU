@@ -9,7 +9,8 @@
         "EMERGENCY ROOM",
         "Emergency Department",
         "emergency department of the same hospital",
-        "emergency department from other hospital"
+        "emergency department from other hospital",
+	"EMERGENCY ROOM ADMIT"
     ],
     "Direct Admit":[
         "WALK-IN/SELF REFERRAL",
@@ -27,7 +28,14 @@
     "Other":[
         "PHYSICIAN REFERRAL",
         "TRANSFER FROM HOSPITAL",
+	"TRANSFER FROM HOSP/EXTRAM",
+	"TRANSFER FROM SKILLED NUR",
+	"TRANSFER FROM OTHER HEALT",
         "CLINIC REFERRAL",
+	"HMO REFERRAL/SICK",
+	"TRSF WITHIN THIS FACILITY",
+	"CLINIC REFERRAL/PREMATURE",
+	"PHYS REFERRAL/NORMAL DELI",
         "TRANSFER FROM SKILLED NURSING FACILITY",
         "INTERNAL TRANSFER TO OR FROM PSYCH",
         "Floor",
@@ -49,6 +57,7 @@
     ],
     "Unknown":[
         "INFORMATION NOT AVAILABLE",
+	"** INFO NOT AVAILABLE **",
         "Unknown",
         "unknown"
     ]

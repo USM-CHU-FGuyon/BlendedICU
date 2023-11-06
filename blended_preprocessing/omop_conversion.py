@@ -11,24 +11,25 @@ from omop_cdm import cdm
 class OMOP_converter(blendedicuTSP):
     def __init__(self,
                  initialize_tables=False,
-                 parquet_format=True):
+                 parquet_format=True,
+                 full_init=True):
         super().__init__()
         self.toparquet = parquet_format
         self.data_pth = self.savepath
-        self.labels = self._load_labels()
-
         self.ref_date = datetime(year=2023, month=1, day=1)
         self.end_date = datetime(year=2099, month=12, day=31)
         self.adm_measuredat = self.flat_hr_from_adm*3600  # seconds
         self.admission_data_datetime = (self.ref_date + pd.Timedelta(self.adm_measuredat, unit='second'))
-
-        ts_pth = self.data_pth+'formatted_timeseries/'
-        med_pth = self.data_pth+'formatted_medications/'
-        self.ts_pths = self.rglob(ts_pth, '*.parquet')
-        self.med_pths = self.rglob(med_pth, '*.parquet')
-        
-        self.ts_pths_chunks = self._get_chunks(self.ts_pths)
-        self.med_pths_chunks = self._get_chunks(self.med_pths)
+        if full_init:
+            self.labels = self._load_labels()
+            self.n_chunks = 100
+            ts_pth = self.data_pth+'formatted_timeseries/'
+            med_pth = self.data_pth+'formatted_medications/'
+            self.ts_pths = self.rglob(ts_pth, '*.parquet')
+            self.med_pths = self.rglob(med_pth, '*.parquet')
+            
+            self.ts_pths_chunks = self._get_chunks(self.ts_pths)
+            self.med_pths_chunks = self._get_chunks(self.med_pths)
 
         pth_concept_table = fr'{self.aux_pth}OMOP_vocabulary/CONCEPT.parquet'
         self.omop_concept = pd.read_parquet(pth_concept_table,
@@ -40,6 +41,7 @@ class OMOP_converter(blendedicuTSP):
                                                      'standard_concept'])
 
         self.savedir = f'{self.data_pth}/OMOP-CDM/'
+        print(self.savedir)
         self.start_index = {
             'person': 1000000,
             'visit_occurrence': 2000000,
@@ -142,8 +144,8 @@ class OMOP_converter(blendedicuTSP):
         self.units = self._get_units()
         
         
-    def _get_chunks(self, pths, n=100):
-        return map(list, np.array_split(pths, len(pths)/n))
+    def _get_chunks(self, pths):
+        return map(list, np.array_split(pths, len(pths)/self.n_chunks))
         
     def source_to_concept_map_table(self):
         ts_mapping = self.cols.concept_id.dropna().astype(int)
@@ -195,7 +197,10 @@ class OMOP_converter(blendedicuTSP):
         self.person['gender_concept_id'] = self.labels.sex.map({1: 8507,
                                                                 0: 8532})
         self.person['year_of_birth'] = self.ref_date.year-self.labels.age
-        self.person['birth_datetime'] = self.person.year_of_birth.apply(lambda x: datetime(year=x, month=1, day=1))
+        self.person['birth_datetime'] = (self.person.year_of_birth
+                                         .apply(lambda x: datetime(year=int(x),
+                                                                   month=1,
+                                                                   day=1)))
         self.person['person_source_value'] = self.labels.uniquepid
         self.person['gender_source_value'] = self.labels.sex
         self.person['location_id'] = self.labels.source_dataset.map(
@@ -290,7 +295,7 @@ class OMOP_converter(blendedicuTSP):
         vals['unit_source'] = unit['concept_code']
         vals['unit_concept_id'] = unit.name
         vals = vals.drop(columns=['patient'])
-        return pd.concat([self.measurement, vals])
+        return self.concat([self.measurement, vals])
 
     def measurement_table(self):
         start_index = self.start_index['measurement']
@@ -315,7 +320,7 @@ class OMOP_converter(blendedicuTSP):
             'glasgow_coma_score_motor', 'glasgow_coma_score_verbal']
 
         for i, pth_chunk in enumerate(self.ts_pths_chunks):
-            print(i)
+            print(f'Chunk {i}/{self.n_chunks}')
             self.measurement = cdm.tables['MEASUREMENT'].copy()
             chunk = pd.read_parquet(pth_chunk).reset_index()
 
@@ -352,7 +357,7 @@ class OMOP_converter(blendedicuTSP):
         obs['observation_date'] = self.admission_data_datetime.date()
         obs['observation_datetime'] = self.admission_data_datetime.time()
 
-        self.observation = pd.concat([self.observation, obs])
+        self.observation = self.concat([self.observation, obs])
 
     def observation_table(self):
         print('Observation table...')
@@ -398,7 +403,7 @@ class OMOP_converter(blendedicuTSP):
         else:
             df['drug_exposure_id'] = self.drug_exposure.index.max() + 1 + df.index
 
-        return pd.concat([self.drug_exposure, df]).set_index('drug_exposure_id')
+        return self.concat([self.drug_exposure, df]).set_index('drug_exposure_id')
 
 
     def drug_exposure_table(self):

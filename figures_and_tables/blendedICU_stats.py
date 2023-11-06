@@ -1,5 +1,6 @@
 import random
 import textwrap
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,26 +17,27 @@ class Blendedicu_stats(blendedicuTSP):
         super().__init__()
         random.seed(0)
         self.plot_savepath = f'{self.savepath}/plots/'
+        Path(self.plot_savepath).mkdir(exist_ok=True)
         self.labels_pth = f'{self.savepath}/preprocessed_labels.parquet'
 
         self.colors = {'amsterdam': 'tab:blue',
                        'eicu': 'tab:orange',
                        'mimic': 'tab:green',
+                       'mimic3': 'tab:purple',
                        'hirid': 'tab:red'}
-        print('get_pths...')
+
         self.raw_ts_pths = self._get_pths(self.formatted_ts_dirs)
         self.ts_pths_lst = sum([v for v in self.raw_ts_pths.values()], [])
         self.med_pths = self._get_pths(self.formatted_med_dirs)
-        print('init_omop...')
-        self.omop = OMOP_converter()
-        print('done')
+
+        self.omop = OMOP_converter(full_init=False)
+
         
-    def _get_pths(self, dir_dic, sample=2500):
+    def _get_pths(self, dir_dic, sample=900):
+        
         pths = {d: self.ls(pth, sort=False)
                 for d, pth in dir_dic.items() if d != 'blended'}
         return {d: random.sample(v, sample) for d, v in pths.items()}
-
-
 
     def flat_stats(self):
         self.labels = pd.read_parquet(self.labels_pth)
@@ -92,12 +94,15 @@ class Blendedicu_stats(blendedicuTSP):
             'amsterdam': '20109',
             'eicu': '139367',
             'hirid': '33932',
-            'mimic': '50048'})
+            'mimic': '50048',
+            'mimic3': '.'})
         self.initial_icu_stays = pd.Series({
             'amsterdam': '23106',
             'eicu': '200859',
             'hirid': r'33932\textsuperscript{1}',
-            'mimic': '69619'})
+            'mimic': '69619',
+            'mimic3': '57874'})
+
         self.n_variables, self.n_variables_std = self._n_variables()
 
         self.numeric_flats = self._numeric_flats()
@@ -161,7 +166,8 @@ class Blendedicu_stats(blendedicuTSP):
         }).unstack(level=1))
 
     def _n_variables(self):
-        self.raw_timeseries = self.load(self.ts_pths_lst, verbose=False)
+        self.raw_timeseries = (self.load(self.ts_pths_lst, verbose=False)
+                               .drop(columns='ventilator_mode'))
 
         self.n_variables_patients = ((self.raw_timeseries.drop(columns='time')
                                      .groupby(level=0).sum() > 0).sum(axis=1)
@@ -170,8 +176,7 @@ class Blendedicu_stats(blendedicuTSP):
 
         self.n_variables_groups = (self.labels[['source_dataset']]
                                        .join(self.n_variables_patients)
-                                       .groupby('source_dataset')
-                                   )
+                                       .groupby('source_dataset'))
 
         self.n_variables = self.n_variables_groups.n_variables.mean()
         self.n_variables_std = self.n_variables_groups.n_variables.std()
@@ -180,8 +185,8 @@ class Blendedicu_stats(blendedicuTSP):
     def medication_inclusion_stats(self):
         
         ohdsi_med_df = (pd.DataFrame(self.ohdsi_med)
-                          .applymap(lambda x: len(x))
-                          .drop('blended'))
+                        .drop('blended')  
+                        .map(lambda x: len(x)))
         self.n_drugs = ohdsi_med_df.shape[1]
         self.n_labels = ohdsi_med_df.sum(1)
         print('\nDrug exposure inclusion stats:')
@@ -198,6 +203,7 @@ class Blendedicu_stats(blendedicuTSP):
                 continue
             print(f'  -> {dataset}')
             ts = (self.load(pths, verbose=False)
+                  .drop(columns='ventilator_mode')
                   .set_index('time', append=True)
                   .groupby(level=[0, 1]).mean().droplevel(1)
                   .groupby(level=0).count()
@@ -236,6 +242,7 @@ class Blendedicu_stats(blendedicuTSP):
         print('Computing drug exposures...')
         self.med_freq = {}
         for dataset, pths in self.med_pths.items():
+            print(f'   -> {dataset}')
             if not pths:
                 print('skipping {dataset}')
                 continue
@@ -310,8 +317,9 @@ class Blendedicu_stats(blendedicuTSP):
             for dataset, group in groups:
 
                 label = dataset if i == 0 else '__nolabel'
+                self.val = group[var]
                 ax = sns.kdeplot(group[var],
-                                 shade=True,
+                                 fill=True,
                                  ax=ax,
                                  label=label,
                                  color=self.colors[dataset])

@@ -44,5 +44,4 @@ class hiridTSP(TimeseriesPreprocessing):
                                      self.kept_med,
                                      **self.med_colnames)
 
-            self.process_tables(ts,
-                                med=med)
+            self.process_tables(ts, med=med)

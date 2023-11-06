@@ -12,6 +12,7 @@ class blendedicuTSP(TimeseriesPreprocessing):
         super().__init__(dataset='blended')
         self.partially_processed_pths = self._get_ts_pths()
         self.labels = self.load(self.savepath+'preprocessed_labels.parquet')
+
         self.labels['ts_path'] = (self.labels.source_dataset.map(self.partiallyprocessed_ts_dirs)
                                   + self.labels.index
                                   + '.parquet')

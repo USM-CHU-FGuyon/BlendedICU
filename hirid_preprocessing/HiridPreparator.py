@@ -1,3 +1,6 @@
+import tarfile
+from pathlib import Path
+
 import pandas as pd
 
 from utils.parquet_utils import compute_offset
@@ -12,42 +15,58 @@ class hiridPreparator(DataPreparator):
             raw_ts_path,
             raw_pharma_path,
             admissions_path,
-            imputedstage_path):
+            imputedstage_path,
+            untar=True):
 
         super().__init__(dataset='hirid', col_stayid='admissionid')
         self.col_los = 'lengthofstay'
         self.unit_los = 'second'
         self.variable_ref_path = self.source_pth+variable_ref_path
-        self.raw_ts_path = self.source_pth+raw_ts_path
-        self.raw_pharma_path = self.source_pth+raw_pharma_path
-        self.admissions_path = self.source_pth+admissions_path
+        self.ts_tar_path = self.source_pth+raw_ts_path
+        self.pharma_tar_path = self.source_pth+raw_pharma_path
+        self.admissions_tar_path = self.source_pth+admissions_path
+        self.admissions_untar_path = self.source_pth+ '/reference_data/'
+        self.admissions_path = f'{self.admissions_untar_path}/general_table.csv'
         self.imputedstage_path = self.source_pth+imputedstage_path
-
+        self.ts_path = self.source_pth + 'observation_tables/parquet/'
+        self.med_path = self.source_pth + 'pharma_records/parquet/'
+        
         self.ts_savepth = self.parquet_pth+'/timeseries_1000_patient_chunks/'
         self.pharma_savepth = self.parquet_pth+'/pharma_1000_patient_chunks/'
         self.id_mapping = self._variablenames_mapping()
 
         self.weights = None
         self.heights = None
+        if untar:
+            self._untar(self.admissions_tar_path, self.admissions_untar_path)
+            self._untar(self.ts_tar_path, self.source_pth)
+            self._untar(self.pharma_tar_path, self.source_pth)
+
 
         self.admissions = self._load_admissions()
 
+    def _untar(self, src, tgt):
+        tar = tarfile.open(src)
+        tar.extractall(path=tgt)
+        tar.close()
+
+
     def _load_ts_chunks(self):
-        return pd.read_csv(self.raw_ts_path,
-                           usecols=['observation_tables/',
-                                    'patientid',
-                                    'value',
-                                    'variableid'],
-                           chunksize=self.chunksize)
+        for p in Path(self.ts_path).iterdir():
+            yield pd.read_parquet(p,
+                                  columns=['datetime',
+                                           'patientid',
+                                           'value',
+                                           'variableid'])
 
     def _load_pharma_chunks(self):
-        return pd.read_csv(self.raw_pharma_path,
-                           usecols=['pharma_records/',
-                                    'pharmaid',
-                                    'givenat',
-                                    'givendose'],
-                           chunksize=self.chunksize)
-
+        df_all_in_one_chunk = pd.read_parquet(self.med_path,
+                                              columns=['patientid',
+                                                       'pharmaid',
+                                                       'givenat',
+                                                       'givendose'])
+        return (df_all_in_one_chunk,)
+    
     def _load_los(self):
         """
         As is usually done with this database, the length of stay is defined as
@@ -69,8 +88,10 @@ class hiridPreparator(DataPreparator):
         return los
 
     def _load_admissions(self):
+
         adm = pd.read_csv(self.admissions_path)
-        adm = adm.rename(columns={'general_table.csv': 'admissionid'})
+
+        adm = adm.rename(columns={'patientid': 'admissionid'})
 
         adm['admissiontime'] = pd.to_datetime(adm['admissiontime'],
                                               errors='coerce')
@@ -127,7 +148,7 @@ class hiridPreparator(DataPreparator):
         heights, weights = [], []
         for i, chunk in enumerate(ts_chunks):
             print(f'Read {(i+1)*self.chunksize} lines from observation table...')
-            chunk = (chunk.rename(columns={'observation_tables/': 'valuedate',
+            chunk = (chunk.rename(columns={'datetime': 'valuedate',
                                            'patientid': 'admissionid'})
                      .merge(self.admissions[['admissiontime', 'admissionid']],
                             on='admissionid')
@@ -175,10 +196,7 @@ class hiridPreparator(DataPreparator):
         chunk_tables = []
         patient_chunk = self.stays[start:start+self.n_patient_chunk]
 
-        chunks = chunk_loader()
-
-        for k, table in enumerate(chunks):
-
+        for k, table in enumerate(chunk_loader()):
             table = table.rename(columns=rename_dic)
 
             table[numcols] = table[numcols].apply(
@@ -242,8 +260,7 @@ class hiridPreparator(DataPreparator):
             chunk = self._build_patient_chunk(
                                     start,
                                     chunk_loader=self._load_ts_chunks,
-                                    rename_dic={
-                                        'observation_tables/': 'offset'},
+                                    rename_dic={'datetime': 'offset'},
                                     itemid_label='variableid',
                                     value_label='value',
                                     id_mapping=self.id_mapping['observation'])
@@ -277,8 +294,7 @@ class hiridPreparator(DataPreparator):
             chunk = self._build_patient_chunk(
                                     start,
                                     chunk_loader=self._load_pharma_chunks,
-                                    rename_dic={'pharma_records/': 'patientid',
-                                                'givenat': 'offset'},
+                                    rename_dic={'givenat': 'offset'},
                                     itemid_label='pharmaid',
                                     value_label='givendose',
                                     id_mapping=self.id_mapping['pharma'])
