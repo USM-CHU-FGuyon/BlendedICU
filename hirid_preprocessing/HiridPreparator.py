@@ -27,9 +27,10 @@ class hiridPreparator(DataPreparator):
         self.admissions_tar_path = self.source_pth+admissions_path
         self.admissions_untar_path = self.source_pth+ '/reference_data/'
         self.admissions_path = f'{self.admissions_untar_path}/general_table.csv'
-        self.imputedstage_path = self.source_pth+imputedstage_path
+        self.imputedstage_tar_path = self.source_pth+imputedstage_path
         self.ts_path = self.source_pth + 'observation_tables/parquet/'
         self.med_path = self.source_pth + 'pharma_records/parquet/'
+        self.imputedstage_path = self.source_pth + 'imputed_stage/parquet/'
         
         self.ts_savepth = self.parquet_pth+'/timeseries_1000_patient_chunks/'
         self.pharma_savepth = self.parquet_pth+'/pharma_1000_patient_chunks/'
@@ -41,11 +42,13 @@ class hiridPreparator(DataPreparator):
             self._untar(self.admissions_tar_path, self.admissions_untar_path)
             self._untar(self.ts_tar_path, self.source_pth)
             self._untar(self.pharma_tar_path, self.source_pth)
-
+            self._untar(self.imputedstage_tar_path, self.source_pth)
 
         self.admissions = self._load_admissions()
 
     def _untar(self, src, tgt):
+        print(f'Untarring \n   {src} \n   into \n   {tgt}\n   This has to be'
+              'done only once and can be deactivated by setting untar=False')
         tar = tarfile.open(src)
         tar.extractall(path=tgt)
         tar.close()
@@ -72,15 +75,15 @@ class hiridPreparator(DataPreparator):
         As is usually done with this database, the length of stay is defined as
         the last timeseries medurement of a patient.
         """
-        timeseries = pd.read_csv(self.imputedstage_path,
-                                 usecols=['imputed_stage/', 'reldatetime'])
+        timeseries = pd.read_parquet(self.imputedstage_path,
+                                     columns=['patientid', 'reldatetime'])
 
-        timeseries = timeseries.dropna().astype({'imputed_stage/': int})
+        timeseries = timeseries.dropna().astype({'patientid': int})
 
         timeseries['reldatetime'] = pd.to_numeric(timeseries['reldatetime'],
                                                   errors='coerce')
         los = (timeseries.dropna()
-               .rename(columns={'imputed_stage/': 'admissionid',
+               .rename(columns={'patientid': 'admissionid',
                                 'reldatetime': 'lengthofstay'})
                .groupby('admissionid')
                .lengthofstay
@@ -227,10 +230,11 @@ class hiridPreparator(DataPreparator):
         variable. 
         """
         print('o Labels')
+        
+        lengthsofstay = self._load_los()
+
         if (self.heights is None) or (self.weights is None):
             self._load_heights_weights()
-
-        lengthsofstay = self._load_los()
 
         admissions = (self.admissions.merge(self.heights,
                                             left_on='admissionid',
