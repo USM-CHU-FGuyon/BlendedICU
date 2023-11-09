@@ -1,6 +1,22 @@
 Welcome to the BlendedICU code repository
 ===
 This is the repository from [Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset](https://www.sciencedirect.com/science/article/abs/pii/S153204642300223X)
+
+Abstract
+---
+**Objective**
+This study introduces the **BlendedICU** dataset, a massive dataset of international intensive care data. This dataset aims to facilitate generalizability studies of machine learning models, as well as statistical studies of clinical practices in the intensive care units.
+
+**Methods**
+Four publicly available and patient-level intensive care databases were used as source databases. A unique and customizable preprocessing pipeline extracted clinically relevant patient-related variables from each source database. Variables were then harmonized and standardized to the Observational Medical Outcomes Partnership (OMOP) Common Data Format. Finally, a brief comparison was carried out to explore differences in the source databases.
+
+**Results**
+The **BlendedICU** dataset features 41 timeseries variables as well as the exposure times to 113 active ingredients extracted from the AmsterdamUMCdb, eICU, HiRID, and MIMIC-IV databases. This resulted in a database of more than 309000 intensive care admissions, spanning over 13 years and three countries. We found that data collection, drug exposure, and patient outcomes varied strongly between source databases.
+
+**Conclusion**
+The variability in data collection, drug exposure, and patient outcomes between the source databases indicated some dissimilarity in patient phenotypes and clinical practices between different intensive care units. This demonstrated the need for generalizability studies of machine learning models. This study provides the clinical data research community with essential data to build efficient and generalizable machine learning models, as well as to explore clinical practices in intensive care units around the world.
+
+
 ```
 @article{Oliver2023Introducing,
 title = {Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset},
