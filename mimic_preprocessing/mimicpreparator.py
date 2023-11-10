@@ -91,10 +91,10 @@ class mimicPreparator(DataPreparator):
         for i, df in enumerate(chartevents):
             print(f'Read {(i+1)*self.chunksize} lines from chartevents table...')
             df = df.merge(self.icustays[['stay_id', 'intime']], on='stay_id')
-
+                    
             df['measuretime'] = ((pd.to_datetime(df['charttime'])
                                  - pd.to_datetime(df['intime']))
-                                 .astype('timedelta64[h]'))
+                                 .astype('timedelta64[s]'))
 
             df = df.loc[(df.itemid.isin(keepids))
                         & (df.measuretime < self.flat_hr_from_adm)]

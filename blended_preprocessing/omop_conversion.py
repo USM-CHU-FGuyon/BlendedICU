@@ -18,7 +18,7 @@ class OMOP_converter(blendedicuTSP):
         self.data_pth = self.savepath
         self.ref_date = datetime(year=2023, month=1, day=1)
         self.end_date = datetime(year=2099, month=12, day=31)
-        self.adm_measuredat = self.flat_hr_from_adm*3600  # seconds
+        self.adm_measuredat = self.flat_hr_from_adm.total_seconds()
         self.admission_data_datetime = (self.ref_date + pd.Timedelta(self.adm_measuredat, unit='second'))
         if full_init:
             self.labels = self._load_labels()

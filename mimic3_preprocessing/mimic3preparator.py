@@ -95,7 +95,7 @@ class mimic3Preparator(DataPreparator):
 
             df['measuretime'] = ((pd.to_datetime(df['CHARTTIME'])
                                  - pd.to_datetime(df['INTIME']))
-                                 .astype('timedelta64[h]'))
+                                 .astype('timedelta64[s]'))
 
             df = df.loc[(df.ITEMID.isin(keepids))
                         & (df.measuretime < self.flat_hr_from_adm)]

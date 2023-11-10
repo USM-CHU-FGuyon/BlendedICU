@@ -39,13 +39,17 @@ class hiridPreparator(DataPreparator):
         self.weights = None
         self.heights = None
         if untar:
+            self._untar_files()
+        
+        self.admissions = self._load_admissions()
+
+    def _untar_files(self):
+        if input('Untar source files ? y/[n]')=='y': 
             self._untar(self.admissions_tar_path, self.admissions_untar_path)
             self._untar(self.ts_tar_path, self.source_pth)
             self._untar(self.pharma_tar_path, self.source_pth)
             self._untar(self.imputedstage_tar_path, self.source_pth)
-
-        self.admissions = self._load_admissions()
-
+            
     def _untar(self, src, tgt):
         print(f'Untarring \n   {src} \n   into \n   {tgt}\n   This has to be'
               'done only once and can be deactivated by setting untar=False')
@@ -162,7 +166,7 @@ class hiridPreparator(DataPreparator):
             h_idx = chunk.variableid == variables['height']
             w_idx = chunk.variableid == variables['weight']
 
-            time_idx = chunk.valuedate < self.flat_hr_from_adm*60
+            time_idx = chunk.valuedate < self.flat_hr_from_adm.total_seconds()
             heights.append(chunk.loc[h_idx & time_idx,
                            ['admissionid', 'value']])
             weights.append(chunk.loc[w_idx & time_idx,

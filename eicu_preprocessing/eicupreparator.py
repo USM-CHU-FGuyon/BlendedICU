@@ -116,35 +116,6 @@ class eicuPreparator(DataPreparator):
         self.med = self.mp.run(self.medication_in)
         return self.save(self.med, self.med_savepath)
 
-    def _admissionweights(self):
-        """
-        This function is left as an example for taking data from the 
-        physicalexam table. However the admission weights are poorly filled
-        compared to the patient table.
-        """
-        raise DeprecationWarning('It is better to use admissionweight from'
-                                 'the patient table.')
-        physicalexam = pd.read_csv(self.physicalexam_pth,
-                                   usecols=['patientunitstayid',
-                                            'physicalexamoffset',
-                                            'physicalexampath',
-                                            'physicalexamtext'])
-
-        weightfeature = 'notes/Progress Notes/Physical Exam/Physical Exam/Constitutional/Weight and I&O/Weight (kg)/Current'
-
-        keepidx = ((physicalexam.physicalexampath == weightfeature)
-                   & (physicalexam.physicalexamoffset
-                      < self.flat_hr_from_adm*60))
-
-        weights = (physicalexam.loc[keepidx]
-                               .astype({'physicalexamtext': float})
-                               .rename(columns={
-                                   'physicalexamtext': 'admissionweight'})
-                               .groupby('patientunitstayid')
-                               .admissionweight
-                               .last())
-        return weights
-
     def gen_flat(self):
         print('o Flat features')
         flat = self.patient.loc[:, ['patientunitstayid',
@@ -200,7 +171,9 @@ class eicuPreparator(DataPreparator):
 
         diagnoses = pd.concat([diagnosis, pasthistory, admissiondx], axis=0)
 
-        idx_adm = diagnoses.diagnosisoffset < 60*self.flat_hr_from_adm
+        diagnoses['diagnosisoffset'] = pd.to_timedelta(diagnoses.diagnosisoffset,
+                                                       unit='min')
+        idx_adm = diagnoses.diagnosisoffset < self.flat_hr_from_adm
 
         diagnoses = (diagnoses.loc[idx_adm]
                               .drop(columns=['diagnosisoffset'])
