@@ -3,6 +3,7 @@ from functools import reduce
 import operator
 import json
 import shutil
+import chardet
 
 import pandas as pd
 
@@ -97,9 +98,14 @@ class DataProcessor:
         dic = {ing: m['blended'] for ing, m in self.ohdsi_med.items()}
         return pd.Series(dic)
 
-    def _read_json(self, pth):
-        return json.load(open(pth, 'r'))
-
+    def _read_json(self, pth, encoding=None):
+        if encoding is None:
+            with open(pth, 'rb') as file_binary:
+                encoding = chardet.detect(file_binary.read())['encoding']
+        
+        with open(pth, 'r', encoding=encoding) as file:
+            return json.load(file)
+            
     def load(self, pth, verbose=True, **kwargs):
         """
         alias for pd.read_parquet
