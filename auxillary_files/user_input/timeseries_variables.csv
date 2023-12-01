@@ -6,7 +6,8 @@ concept_id;blended;eicu;mimic;mimic3;amsterdam;hirid;categories;user_min;user_ma
 4152194;noninvasive_systolic_blood_pressure;noninvasivesystolic;Non Invasive Blood Pressure systolic;Non Invasive Blood Pressure systolic;Niet invasieve bloeddruk systolisch;Non-invasive systolic arterial pressure;Vitals;0;;1;mean
 4154790;noninvasive_diastolic_blood_pressure;noninvasivediastolic;Non Invasive Blood Pressure diastolic;Non Invasive Blood Pressure diastolic;Niet invasieve bloeddruk diastolisch;Non-invasive diastolic arterial pressure;Vitals;0;;1;mean
 4239021;noninvasive_mean_blood_pressure;noninvasivemean;Non Invasive Blood Pressure mean;Non Invasive Blood Pressure mean;Niet invasieve bloeddruk gemiddeld;Non-invasive mean arterial pressure;Vitals;0;;1;mean
-40483579;O2_saturation;sao2;O2 saturation pulseoxymetry;O2 saturation pulseoxymetry;O2-Saturatie (bloed);Oxygen saturation in Arterial blood;Vitals;0;100;1;mean
+4196147;O2_pulseoxymetry_saturation;O2 Sat (%);O2 saturation pulseoxymetry;O2 saturation pulseoxymetry;Saturatie (Monitor);Peripheral oxygen saturation;Vitals;0;100;1;mean
+40483579;O2_arterial_saturation;sao2;Oxygen Saturation;Oxygen Saturation;O2-Saturatie (bloed);Oxygen saturation in Arterial blood;Vitals;0;100;1;mean
 4174894;temperature;temperature;Temperature Fahrenheit;Temperature Fahrenheit;Temp Bloed;Core body temperature;Vitals;0;;1;mean
 4313591;respiratory_rate;Respiratory Rate;Respiratory Rate;Respiratory Rate;Ademfreq.;Respiratory rate;Vitals;0;;1;mean
 44782827;expiratory_tidal_volume;Exhaled TV (patient);Tidal Volume (observed);Tidal Volume (observed);Exp. tidal volume;Expiratory tidal volume;Vitals;0;;1;mean

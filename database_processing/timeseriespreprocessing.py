@@ -304,7 +304,7 @@ class TimeseriesPreprocessing(DataProcessor):
         return (series-32)/1.8
 
     def _harmonize_amsterdam(self, df):
-        df['O2_saturation'] = df['O2_saturation']*100
+        df['O2_arterial_saturation'] = df['O2_arterial_saturation']*100
         df['hemoglobin'] = df['hemoglobin']*1.613
 
         # The numericitems table indicates that all

@@ -52,7 +52,7 @@ class Ams_FLProcessor(FlatAndLabelsProcessor):
         def _dec(x):
             return str(x).replace('-', ' ').replace('+', ' ').split()[0]
 
-        df[cols] = (df[cols].applymap(_dec)
+        df[cols] = (df[cols].map(_dec)
                             .apply(pd.to_numeric, errors='coerce'))
         return df
 
