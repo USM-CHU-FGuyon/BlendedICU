@@ -11,10 +11,10 @@ specifications.
 """
 from blended_preprocessing.omop_conversion import OMOP_converter
 
-c = OMOP_converter(initialize_tables=True)
+self = OMOP_converter(initialize_tables=True)
 
-c.measurement_table()
+self.measurement_table(start_chunk=0)
 
-c.drug_exposure_table()
+self.drug_exposure_table(start_chunk=0)
 
-c.export_tables()
+self.export_tables()

@@ -4,7 +4,9 @@ import operator
 import json
 import shutil
 import chardet
+import random
 
+import natsort
 import pandas as pd
 
 
@@ -134,11 +136,21 @@ class DataProcessor:
         except FileNotFoundError:
             pass
 
-    def rglob(self, pth, reg):
+    def rglob(self, pth, reg, verbose=False, sort=False, shuffleseed=None):
         """
         alias for using rglob.
         """
-        return [*Path(pth).rglob(reg)]
+        if verbose: print(f'   Iterate {pth}{reg}...')
+        _rglob = Path(pth).rglob(reg)
+        if verbose: print('   Cast to list...')
+        _rglob_list = list(_rglob)
+        if verbose: print('      done.')
+        if sort:
+            _rglob_list = natsort.natsorted(_rglob_list)
+        if shuffleseed is not None:
+            random.seed(shuffleseed)
+            random.shuffle(_rglob_list)
+        return _rglob_list
 
     def reset_dir(self):
         pth_preprocessed_ts = Path(self.preprocessed_ts_dir)
