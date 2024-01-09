@@ -127,10 +127,10 @@ class OMOP_converter(blendedicuTSP):
         
         if initialize_tables:
             self.source_to_concept_map_table()
-            self.person_table()
 
             self.location_table()
             self.care_site_table()
+            self.person_table()
             self.visit_occurence_table()
 
             self.death_table()
@@ -281,11 +281,13 @@ class OMOP_converter(blendedicuTSP):
                                                                    day=1)))
         self.person['person_source_value'] = self.labels.uniquepid
         self.person['gender_source_value'] = self.labels.sex
-        self.person['location_id'] = self.labels.source_dataset.map(
+        self.person['location_id'] = (self.labels.source_dataset.map(
                                                         {'amsterdam': 'NL',
-                                                         'hirid': 'SU',
+                                                         'hirid': 'CH',
                                                          'mimic': 'US',
+                                                         'mimic3': 'US',
                                                          'eicu': 'US'})
+                                        .map(self.locationid_mapper))
         unique_pid = self.person['person_source_value'].unique()
         start_idx = self.start_index['person']
         self.person_id_mapper = pd.Series(range(start_idx,
@@ -640,7 +642,7 @@ class OMOP_converter(blendedicuTSP):
         All other databases are monocentric, a single location was created.
         '''
         print('Location table...')
-        self.location = cdm.tables['LOCATION']
+        location_cols = cdm.tables['LOCATION'].columns
 
         eicu_loc_id = [
             '404.0', '420.0', '252.0', '90.0', '94.0', '385.0', '136.0', 
@@ -695,12 +697,26 @@ class OMOP_converter(blendedicuTSP):
              'country_source_value': 'NL',
              'location_source_value': 'Amsterdam University Medical Center'},
         ]
+        
+        location_dic_3 = [
+            {'country_concept_id': 4330442,
+             'country_source_value': 'US',
+             'location_source_value': 'US'},
+            {'country_concept_id': 4320169,
+             'country_source_value': 'NL',
+             'location_source_value': 'NL'},
+            {'country_concept_id': 4330427,
+             'country_source_value': 'CH',
+             'location_source_value': 'CH'},
+            ]
 
-        self.location = pd.DataFrame(location_dic_1+location_dic_2)
+        self.location = pd.DataFrame(location_dic_1
+                                     +location_dic_2
+                                     +location_dic_3)
 
-        self.location['location_id'] = self.start_index['location'] + \
-            np.arange(len(self.location))
-
+        self.location['location_id'] = (self.start_index['location'] 
+                                        + np.arange(len(self.location)))
+        self.location = self.location.reindex(columns=cdm.tables['LOCATION'].columns)
 
     def _load_labels(self):
         labels_pth = self.data_pth+'preprocessed_labels.parquet'
@@ -750,3 +766,4 @@ class OMOP_converter(blendedicuTSP):
         self.export_table(self.source_to_concept_map, 'SOURCE_TO_CONCEPT_MAP')
         self.export_table(self.visit_occurrence, 'VISIT_OCCURRENCE')
         self.export_table(self.domain, 'DOMAIN')
+        self.export_table(self.location, 'LOCATION')
