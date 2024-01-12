@@ -89,6 +89,7 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
 
         labels_blended['weight'] = labels_blended['raw_weight']
         labels_blended['height'] = labels_blended['raw_height']
+        labels_blended['raw_age'] = labels_blended['age']
 
         labels_blended = (labels_blended.set_index(self.idx_col)
                                         .pipe(_take_sample,
@@ -102,6 +103,7 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                               normalize=self.FLAT_NORMALIZE,
                                               recompute_quantiles=True)
                                         .astype({'age': float,
+                                                 'raw_age': float,
                                                  'raw_weight': float,
                                                  'raw_height': float,
                                                  'uniquepid': str,

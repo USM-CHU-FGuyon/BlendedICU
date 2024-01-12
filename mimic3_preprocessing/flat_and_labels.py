@@ -49,9 +49,8 @@ class mimic3_FLProcessor(FlatAndLabelsProcessor):
         age['age'] = ((age['intime'] - age['DOB'])
                       .apply(lambda x: x.total_seconds()/self.seconds_in_a_year)
                       .astype(int))
-        
         labels['sex'] = flat['GENDER']
-        labels['age'] = age['age']
+        labels['age'] = age['age'].where(age['age']<=300, 90) # https://github.com/MIT-LCP/mimic-code/issues/637
         labels['raw_height'] = flat['raw_height']
         labels['height'] = flat['height']
         labels['raw_weight'] = flat['raw_weight']

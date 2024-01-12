@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import datetime, timedelta
-
+import hashlib
 import pandas as pd
 import numpy as np
 import pyarrow as pa
@@ -34,12 +34,9 @@ class OMOP_converter(blendedicuTSP):
                                                      'vocabulary_id',
                                                      'concept_class_id',
                                                      'standard_concept'])
-
         self.savedir = f'{self.data_pth}/OMOP-CDM/'
         print(self.savedir)
         self.start_index = {
-            'person': 1000000,
-            'visit_occurrence': 2000000,
             'observation': 3000000,
             'drug_exposure': 4000000,
             'measurement': 5000000000,
@@ -68,9 +65,9 @@ class OMOP_converter(blendedicuTSP):
             }
         
         self.unit_mapping = {
-            'age': 9448,
-            'height': 8582,
-            'weight': 9529,
+            'raw_age': 9448,
+            'raw_height': 8582,
+            'raw_weight': 9529,
             'heart_rate': 8541,
             'invasive_systolic_blood_pressure': 8876,
             'invasive_diastolic_blood_pressure': 8876,
@@ -131,8 +128,7 @@ class OMOP_converter(blendedicuTSP):
             self.location_table()
             self.care_site_table()
             self.person_table()
-            self.visit_occurence_table()
-
+            self.visit_occurrence_table()
             self.death_table()
             self.domain_table()
             self.observation_table()
@@ -142,7 +138,7 @@ class OMOP_converter(blendedicuTSP):
         self.measurement_schema = self._measurement_schema()
         self.observation_schema = self._observation_schema()
         self.drug_exposure_schema = self._drug_exposure_schema()
-        
+
     def _get_pth_chunks(self, shuffleseed=974):
         '''
         rglob lists all files, then sorts them and shuffle them with a seed 
@@ -167,16 +163,16 @@ class OMOP_converter(blendedicuTSP):
     def _measurement_schema(self):
         schema = pa.schema([('value_as_number', pa.float32()),
                             ('time', pa.float32()),
-                            ('visit_occurrence_id', pa.int64()),
+                            ('visit_occurrence_id', pa.string()),
                             ('visit_start_date', pa.date32()),
                             ('visit_source_value', pa.string()),
-                            ('person_id', pa.int32()),
+                            ('person_id', pa.string()),
                             ('measurement_datetime', pa.date64()),
                             ('measurement_date', pa.date32()),
                             ('measurement_time', pa.time32('s')),
                             ('measurement_concept_id', pa.int32()),
                             ('measurement_source_value', pa.float32()),
-                            ('unit_source', pa.string()),
+                            ('unit_source_value', pa.string()),
                             ('unit_concept_id', pa.int32()),
                             ('measurement_id', pa.float32()),
                             ])
@@ -184,7 +180,7 @@ class OMOP_converter(blendedicuTSP):
     
     def _observation_schema(self):
         schema = pa.schema([('observation_id', pa.int32()),
-                            ('person_id', pa.int32()),
+                            ('person_id', pa.string()),
                             ('observation_concept_id', pa.int32()),
                             ('observation_date', pa.date32()),
                             ('observation_datetime', pa.time32('s')),
@@ -195,7 +191,7 @@ class OMOP_converter(blendedicuTSP):
                             ('qualifier_concept_id', pa.float32()),
                             ('unit_concept_id', pa.int32()),
                             ('provider_id', pa.float32()),
-                            ('visit_occurrence_id', pa.int64()),
+                            ('visit_occurrence_id', pa.string()),
                             ('visit_detail_id', pa.float32()),
                             ('observation_source_value', pa.float32()),
                             ('observation_source_concept_id', pa.int32()),
@@ -210,8 +206,8 @@ class OMOP_converter(blendedicuTSP):
     def _drug_exposure_schema(self):
         schema = pa.schema([('drug_source_value', pa.string()),
                             ('drug_type_concept_id', pa.int32()),
-                            ('visit_occurrence_id', pa.int64()),
-                            ('person_id', pa.int32()),
+                            ('visit_occurrence_id', pa.string()),
+                            ('person_id', pa.string()),
                             ('drug_exposure_start_date', pa.date32()),
                             ('drug_exposure_start_datetime', pa.string()),
                             ('drug_exposure_end_date', pa.date32()),
@@ -219,8 +215,6 @@ class OMOP_converter(blendedicuTSP):
                             ('drug_concept_id', pa.int32()),
                             ])
         return schema
-        
-        
         
     def _get_chunks(self, pths):
         return map(list, np.array_split(pths, self.n_chunks))
@@ -260,7 +254,6 @@ class OMOP_converter(blendedicuTSP):
         return units
 
     def _load_med(self):
-        #TODO : load med by chunk.
         self.med_pths = self.rglob(self.data_pth+'formatted_medications',
                                    '*.parquet')
         print(f'Loading med for {len(self.med_pths)} patients...')
@@ -268,66 +261,80 @@ class OMOP_converter(blendedicuTSP):
         print('   -> done')
         return df.reset_index()
 
+    def _hash_values(self, series, prefix):
+        '''
+        16 character should be more than enough for patients or visits.
+        '''
+        hashed = hashlib.md5(series.encode('utf-8')).hexdigest()[:16]
+        return prefix+'_'+hashed
+        
+    def _id_mapper(self, hashed_series, prefix):
+        return pd.Series(hashed_series.apply(self._hash_values, prefix=prefix).values,
+                         index=hashed_series)
+    
     def person_table(self):
         print('Person table...')
-        self.person = cdm.tables['PERSON']
-
-        self.person['gender_concept_id'] = self.labels.sex.map({1: 8507,
-                                                                0: 8532})
-        self.person['year_of_birth'] = self.ref_date.year-self.labels.age
-        self.person['birth_datetime'] = (self.person.year_of_birth
+        person = cdm.tables['PERSON']
+        person_labels = self.labels.drop_duplicates(subset='uniquepid')
+        person['gender_concept_id'] = person_labels.sex.map({1: 8507,
+                                                                  0: 8532})
+        person['year_of_birth'] = self.ref_date.year - person_labels['raw_age']
+        person['birth_datetime'] = (person.year_of_birth
                                          .apply(lambda x: datetime(year=int(x),
                                                                    month=1,
                                                                    day=1)))
-        self.person['person_source_value'] = self.labels.uniquepid
-        self.person['gender_source_value'] = self.labels.sex
-        self.person['location_id'] = (self.labels.source_dataset.map(
+        person['person_source_value'] = person_labels.uniquepid
+        person['gender_source_value'] = person_labels.sex
+        person['location_id'] = (person_labels.source_dataset.map(
                                                         {'amsterdam': 'NL',
                                                          'hirid': 'CH',
                                                          'mimic': 'US',
                                                          'mimic3': 'US',
                                                          'eicu': 'US'})
                                         .map(self.locationid_mapper))
-        unique_pid = self.person['person_source_value'].unique()
-        start_idx = self.start_index['person']
-        self.person_id_mapper = pd.Series(range(start_idx,
-                                                start_idx+len(unique_pid)),
-                                          index=unique_pid)
-        self.person['person_id'] = self.person['person_source_value'].map(self.person_id_mapper)
 
-    def visit_occurence_table(self):
-        self.visit_occurrence = cdm.tables['VISIT_OCCURRENCE']
+        self.person_id_mapper = self._id_mapper(person['person_source_value'],
+                                                prefix='p')
+        person['person_id'] = person['person_source_value'].map(self.person_id_mapper)
+        
+        self.person = person
+        
+    def visit_occurrence_table(self):
+        visit_occurrence = cdm.tables['VISIT_OCCURRENCE']
 
-        self.visit_occurrence['_source_person_id'] = self.labels.uniquepid
-        self.visit_occurrence['_source_visit_id'] = self.labels.patient
-        self.visit_occurrence['visit_source_value'] = self.labels.patient
-        self.visit_occurrence['visit_start_date'] = self.ref_date.date()
-        self.visit_occurrence['visit_start_datetime'] = self.ref_date.time()
-        self.visit_occurrence['visit_concept_id'] = 32037
-        self.visit_occurrence['visit_type_concept_id'] = 44818518
-        self.visit_occurrence['admitted_from_concept_id'] = (self.labels.origin
-                                                             .map(self.admission_origins)
-                                                             .map(self.concept_mapping))
-        self.visit_occurrence['admitted_from_source_value'] = self.labels.origin
+        visit_occurrence['_source_person_id'] = self.labels.uniquepid
+        visit_occurrence['_source_visit_id'] = self.labels.patient
+        visit_occurrence['visit_source_value'] = self.labels.patient
+        visit_occurrence['visit_start_date'] = self.ref_date.date()
+        visit_occurrence['visit_start_datetime'] = self.ref_date.time()
+        visit_occurrence['visit_concept_id'] = 32037
+        visit_occurrence['visit_type_concept_id'] = 44818518
+        visit_occurrence['admitted_from_concept_id'] = (
+                                                self.labels.origin
+                                                .map(self.admission_origins)
+                                                .map(self.concept_mapping))
+        visit_occurrence['admitted_from_source_value'] = self.labels.origin
         visit_end_datetime = self.ref_date + self.labels.lengthofstay.apply(timedelta)
-        self.visit_occurrence['visit_end_date'] = visit_end_datetime.dt.date
-        self.visit_occurrence['visit_end_datetime'] = visit_end_datetime.dt.time
-        self.visit_occurrence['person_id'] = self.visit_occurrence['_source_person_id'].map(self.person_id_mapper)
-        self.visit_occurrence['discharged_to_source_value'] = self.labels.discharge_location
-        self.visit_occurrence['discharged_to_concept_id'] = self.labels.discharge_location.map(self.concept_mapping)
-        self.visit_occurrence['visit_occurrence_id'] = self.visit_occurrence.index + self.start_index['visit_occurrence']
-        self.visit_occurrence = self.visit_occurrence.set_index(
-            'visit_occurrence_id', drop=False)
-        self.visit_mapper = self.visit_occurrence[['_source_visit_id', 'visit_occurrence_id']].set_index(
-            '_source_visit_id')['visit_occurrence_id']
+        visit_occurrence['visit_end_date'] = visit_end_datetime.dt.date
+        visit_occurrence['visit_end_datetime'] = visit_end_datetime.dt.time
+        visit_occurrence['person_id'] = visit_occurrence['_source_person_id'].map(self.person_id_mapper)
+        visit_occurrence['discharged_to_source_value'] = self.labels.discharge_location
+        visit_occurrence['discharged_to_concept_id'] = self.labels.discharge_location.map(self.concept_mapping)
+        
+        self.visit_mapper = self._id_mapper(visit_occurrence['visit_source_value'],
+                                            prefix='v')
+        visit_occurrence['visit_occurrence_id'] = visit_occurrence['visit_source_value'].map(self.visit_mapper)
 
-        self.visit_occurrence = self.visit_occurrence.drop(
-            columns=['_source_person_id', '_source_visit_id'])
-
+        self.visit_occurrence = (visit_occurrence
+                                 .drop(columns=['_source_person_id',
+                                                '_source_visit_id'])
+                                 .set_index('visit_occurrence_id', drop=False))
+        
         self.labels.index = self.labels.patient.map(self.visit_mapper)
         self.labels = self.labels.rename_axis('visit_occurrence_id')
 
     def death_table(self):
+        print('Death table...')
         self.death_labels = self.labels.loc[self.labels.mortality == 1]
 
         self.death = cdm.tables['DEATH']
@@ -368,8 +375,10 @@ class OMOP_converter(blendedicuTSP):
                           left_on='patient',
                           right_on='visit_source_value')
 
-        vals['measurement_datetime'] = (self.ref_date + \
-            vals['time'].apply(pd.Timedelta, unit='second')).astype('datetime64[ns]')
+        vals['measurement_datetime'] = (self.ref_date 
+                                        + vals['time'].apply(pd.Timedelta,
+                                                             unit='second')
+                                        ).astype('datetime64[ns]')
         
         vals['measurement_date'] = vals['measurement_datetime'].dt.date
         vals['measurement_time'] = vals['measurement_datetime'].dt.time
@@ -377,7 +386,7 @@ class OMOP_converter(blendedicuTSP):
         vals['visit_occurrence_id'] = vals['visit_occurrence_id']
         vals['measurement_concept_id'] = self.concept_mapping[varname]
         vals['measurement_source_value'] = vals['value_as_number']
-        vals['unit_source'] = unit['concept_code']
+        vals['unit_source_value'] = unit['concept_code']
         vals['unit_concept_id'] = unit.name
         vals = vals.drop(columns=['patient'])
         return self.concat([self.measurement, vals])
@@ -385,7 +394,7 @@ class OMOP_converter(blendedicuTSP):
 
     def measurement_table(self, start_chunk=0):
         start_index = self.start_index['measurement']
-        self.admission_measurements = ['height', 'weight']
+        self.admission_measurements = ['raw_height', 'raw_weight']
         self.ts_measurements = [
             'heart_rate', 'invasive_systolic_blood_pressure',
             'invasive_diastolic_blood_pressure',
@@ -462,12 +471,18 @@ class OMOP_converter(blendedicuTSP):
         weight_breaks = [-np.inf]+np.arange(30, 150, 5).tolist()+[np.inf]
         height_breaks = [-np.inf]+np.arange(120, 210, 5).tolist()+[np.inf]
 
-        self._add_observation(age_breaks, column='age',
-                              concept_id=44804452, unit_concept_id=9448)
-        self._add_observation(weight_breaks, column='weight',
-                              concept_id=3711521, unit_concept_id=9529)
-        self._add_observation(height_breaks, column='height',
-                              concept_id=4203099, unit_concept_id=8582)
+        self._add_observation(age_breaks,
+                              column='raw_age',
+                              concept_id=44804452,
+                              unit_concept_id=9448)
+        self._add_observation(weight_breaks,
+                              column='raw_weight',
+                              concept_id=3711521,
+                              unit_concept_id=9529)
+        self._add_observation(height_breaks,
+                              column='raw_height',
+                              concept_id=607590,
+                              unit_concept_id=8582)
 
         self.observation['observation_type_concept_id'] = 38000280
 
@@ -525,8 +540,7 @@ class OMOP_converter(blendedicuTSP):
                               'DRUG_EXPOSURE',
                               mode='parquet',
                               chunkindex=i,
-                              schema=self.drug_exposure_schema,
-                              )
+                              schema=self.drug_exposure_schema)
 
     def care_site_table(self):
         print('Care_site table...')
@@ -606,14 +620,14 @@ class OMOP_converter(blendedicuTSP):
             ]
 
         self.concept_ids_flat = [
-            44804452,  # age
-            37111521,  # weight
-            4203099,  # height
+            4265453,  # age
+            4099154,  # weight
+            607590,  # height
             ]
 
         self.concept_ids_obs = pd.Series({
-            'height': 607590,
-            'weight': 4099154
+            'raw_height': 607590,
+            'raw_weight': 4099154
             })
 
         self.concept_ids_units = self.concept_unit.index.to_list()
@@ -642,7 +656,6 @@ class OMOP_converter(blendedicuTSP):
         All other databases are monocentric, a single location was created.
         '''
         print('Location table...')
-        location_cols = cdm.tables['LOCATION'].columns
 
         eicu_loc_id = [
             '404.0', '420.0', '252.0', '90.0', '94.0', '385.0', '136.0', 
