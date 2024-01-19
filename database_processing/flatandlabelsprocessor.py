@@ -87,3 +87,16 @@ class FlatAndLabelsProcessor(DataProcessor):
         self.save(self.labels, f'{self.savepath}preprocessed_labels.parquet')
         return self.labels
         
+    def run_flat_and_labels(self):        
+        self.labels, self.flat = self.preprocess_flat_and_labels()
+
+        print(f'Initial number of admissions : {len(self.labels)}')
+        if self.dataset != 'blended':
+            self.flat = self._reindexing(self.flat)
+            self.labels = self._reindexing(self.labels)
+
+        print(f'number of admissions after preprocessing : {len(self.labels)}')
+        self.save(self.flat, f'{self.savepath}preprocessed_flat.parquet')
+        self.save(self.labels, f'{self.savepath}preprocessed_labels.parquet')
+        return self.flat, self.labels
+    
