@@ -175,6 +175,18 @@ class OMOP_converter(blendedicuTSP):
                             ('unit_source_value', pa.string()),
                             ('unit_concept_id', pa.int32()),
                             ('measurement_id', pa.float32()),
+                            ('measurement_type_concept_id', pa.int32()),
+                            ('operator_concept_id', pa.int32()),
+                            ('value_as_concept_id', pa.int32()),
+                            ('range_low', pa.float32()),
+                            ('range_high', pa.float32()),
+                            ('provider_id', pa.int32()),
+                            ('visit_detail_id', pa.int32()),
+                            ('measurement_source_concept_id', pa.int32()),
+                            ('unit_source_concept_id', pa.int32()),
+                            ('value_source_value', pa.float32()),
+                            ('measurement_event_id', pa.int32()),
+                            ('meas_event_field_concept_id', pa.int32())
                             ])
         return schema
     
@@ -213,6 +225,20 @@ class OMOP_converter(blendedicuTSP):
                             ('drug_exposure_end_date', pa.date32()),
                             ('drug_exposure_end_datetime', pa.string()),
                             ('drug_concept_id', pa.int32()),
+                            ('drug_exposure_id', pa.int32()),
+                            ('verbatim_end_date', pa.date32()),
+                            ('stop_reason', pa.string()),
+                            ('refills', pa.string()),
+                            ('quantity', pa.string()),
+                            ('days_supply', pa.float32()),
+                            ('sig', pa.string()),
+                            ('route_concept_id', pa.int32()),
+                            ('lot_number', pa.string()),
+                            ('provider_id', pa.int32()),
+                            ('visit_detail_id', pa.int32()),
+                            ('drug_source_concept_id', pa.int32()),
+                            ('route_source_value', pa.string()),
+                            ('dose_unit_source_value', pa.string()),
                             ])
         return schema
         
@@ -300,6 +326,7 @@ class OMOP_converter(blendedicuTSP):
         self.person = person
         
     def visit_occurrence_table(self):
+        print('Visit Occurrence...')
         visit_occurrence = cdm.tables['VISIT_OCCURRENCE']
 
         visit_occurrence['_source_person_id'] = self.labels.uniquepid
@@ -338,12 +365,15 @@ class OMOP_converter(blendedicuTSP):
         self.death_labels = self.labels.loc[self.labels.mortality == 1]
 
         self.death = cdm.tables['DEATH']
-        self.death['person_id'] = self.death_labels.index
-        self.death.index = self.death.person_id
+        self.death['person_id'] = self.death_labels.index.map(self.visit_occurrence.person_id)
+        self.death.index = self.death_labels.index
         death_datetimes = self.ref_date + self.death_labels.lengthofstay.apply(timedelta)
 
         self.death['death_date'] = death_datetimes.dt.date
         self.death['death_datetime'] = death_datetimes.dt.time
+        self.death = (self.death
+                      .reset_index(drop=True)
+                      .drop_duplicates(subset='person_id'))
 
     def _add_measurement(self, varname, timeseries=None, patients=[]):
         self.ts = timeseries
@@ -389,7 +419,7 @@ class OMOP_converter(blendedicuTSP):
         vals['unit_source_value'] = unit['concept_code']
         vals['unit_concept_id'] = unit.name
         vals = vals.drop(columns=['patient'])
-        return self.concat([self.measurement, vals])
+        return pd.concat([self.measurement, vals])
 
 
     def measurement_table(self, start_chunk=0):
@@ -419,7 +449,6 @@ class OMOP_converter(blendedicuTSP):
             if i< start_chunk:
                 continue
             print(f'Measurement chunk {i}/{self.n_chunks}')
-            
             self.measurement = cdm.tables['MEASUREMENT'].copy()
             chunk = pd.read_parquet(pth_chunk).reset_index()
             self.chunk = chunk
@@ -432,12 +461,12 @@ class OMOP_converter(blendedicuTSP):
                 self.measurement = self._add_measurement(varname,
                                                          timeseries=chunk)
 
-            self.measurement['measurement_id'] = (self.measurement.index + start_index).astype('float32')
+            self.measurement['measurement_id'] = (np.arange(len(self.measurement)) + start_index).astype('float32')
             start_index = start_index+self.start_index['measurement']
 
             self.measurement['visit_start_date'] = pd.to_datetime(self.measurement['visit_start_date'])
             self.measurement['measurement_date'] = pd.to_datetime(self.measurement['measurement_date'])
-
+            self.measurement['value_source_value'] = self.measurement['value_as_number']
             self.export_table(self.measurement,
                               'MEASUREMENT',
                               mode='parquet',
@@ -461,7 +490,6 @@ class OMOP_converter(blendedicuTSP):
         obs['person_id'] = self.visit_occurrence.loc[obs.visit_occurrence_id, 'person_id']
         obs['observation_date'] = self.admission_data_datetime.date()
         obs['observation_datetime'] = self.admission_data_datetime.time()
-
         self.observation = self.concat([self.observation, obs])
 
     def observation_table(self):
@@ -516,8 +544,7 @@ class OMOP_converter(blendedicuTSP):
             df['drug_exposure_id'] = self.start_index['drug_exposure'] + df.index
         else:
             df['drug_exposure_id'] = self.drug_exposure.index.max() + 1 + df.index
-
-        return self.concat([self.drug_exposure, df]).set_index('drug_exposure_id')
+        return pd.concat([self.drug_exposure, df]).set_index('drug_exposure_id')
 
 
     def drug_exposure_table(self, start_chunk=0):
@@ -529,12 +556,15 @@ class OMOP_converter(blendedicuTSP):
             chunk = pd.read_parquet(pth_chunk).reset_index()
             self.chunk = chunk
             self.drug_exposure = (chunk.pipe(self._add_drugs)
-                                       .drop(columns='_patient'))
+                                  .drop(columns='_patient'))
             
             self.drug_exposure['drug_exposure_start_date'] = pd.to_datetime(self.drug_exposure['drug_exposure_start_date'])
             self.drug_exposure['drug_exposure_end_date'] = pd.to_datetime(self.drug_exposure['drug_exposure_end_date'])
-            self.drug_exposure['drug_exposure_start_datetime'] = self.drug_exposure['drug_exposure_start_datetime'].astype(str)
-            self.drug_exposure['drug_exposure_end_datetime'] = self.drug_exposure['drug_exposure_end_datetime'].astype(str)
+            self.drug_exposure['person_id'] = self.drug_exposure.visit_occurrence_id.map(self.visit_occurrence.person_id)
+            self.drug_exposure = self.drug_exposure.astype({
+                'drug_exposure_start_datetime': str,
+                'drug_exposure_end_datetime': str
+                })
             
             self.export_table(self.drug_exposure,
                               'DRUG_EXPOSURE',
@@ -645,7 +675,9 @@ class OMOP_converter(blendedicuTSP):
                             + self.concept_ids_units
                             )
 
-        self.concept = self.omop_concept.loc[np.unique(self.concept_ids)]
+        concept_data = self.omop_concept.loc[np.unique(self.concept_ids)]
+
+        self.concept = pd.concat([self.concept, concept_data])
 
         self.concept_mapper = self.concept.reset_index().set_index('concept_name')['concept_id']
 
@@ -658,42 +690,27 @@ class OMOP_converter(blendedicuTSP):
         print('Location table...')
 
         eicu_loc_id = [
-            '404.0', '420.0', '252.0', '90.0', '94.0', '385.0', '136.0', 
-            '259.0', '301.0', '227.0', '449.0', '345.0', '248.0', '279.0',
-            '122.0', '264.0', '436.0', '391.0', '338.0', '63.0', '266.0',
-            '336.0', '167.0', '197.0', '188.0', '337.0', '400.0', '202.0',
-            '69.0', '307.0', '199.0', '141.0', '243.0', '73.0', '269.0',
-            '440.0', '403.0', '424.0', '58.0', '280.0', '382.0', '245.0',
-            '283.0', '394.0', '249.0', '300.0', '208.0', '155.0', '176.0',
-            '435.0', '443.0', '452.0', '171.0', '165.0', '154.0', '183.0',
-            '390.0', '282.0', '142.0', '407.0', '458.0', '195.0', '95.0',
-            '389.0', '358.0', '412.0', '277.0', '425.0', '85.0', '226.0',
-            '331.0', '220.0', '152.0', '357.0', '388.0', '79.0', '353.0',
-            '271.0', '392.0', '181.0', '318.0', '148.0', '157.0', '405.0',
-            '205.0', '268.0', '419.0', '423.0', '224.0', '198.0', '207.0',
-            '272.0', '416.0', '67.0', '146.0', '417.0', '144.0', '256.0',
-            '328.0', '184.0', '60.0', '281.0', '444.0', '459.0', '175.0',
-            '253.0', '217.0', '310.0', '421.0', '413.0', '360.0', '393.0',
-            '131.0', '140.0', '66.0', '71.0', '194.0', '411.0', '387.0',
-            '384.0', '364.0', '397.0', '422.0', '158.0', '110.0', '125.0',
-            '196.0', '402.0', '92.0', '201.0', '396.0', '102.0', '398.0',
-            '386.0', '244.0', '383.0', '209.0', '206.0', '355.0', '365.0',
-            '68.0', '251.0', '204.0', '433.0', '445.0', '254.0', '210.0',
-            '59.0', '143.0', '437.0', '215.0', '123.0', '138.0', '174.0',
-            '438.0', '250.0', '112.0', '56.0', '434.0', '258.0', '342.0',
-            '428.0', '108.0', '200.0', '262.0', '312.0', '164.0', '203.0',
-            '180.0', '182.0', '439.0', '399.0', '275.0', '323.0', '133.0',
-            '429.0', '350.0', '447.0', '263.0', '120.0', '273.0', '267.0',
-            '381.0', '356.0', '61.0', '401.0', '246.0', '352.0', '408.0',
-            '414.0', '83.0', '265.0', '303.0', '96.0', '91.0', '93.0',
-            '179.0', '135.0', '212.0', '361.0', '115.0', '84.0', '86.0',
-            '363.0', '151.0', '409.0', '156.0', '351.0'
-            ]
+               404, 420, 252,  90,  94, 385, 136, 259, 301, 227, 449, 345, 248,
+               279, 122, 264, 436, 391, 338,  63, 266, 336, 167, 197, 188, 337,
+               400, 202,  69, 307, 199, 141, 243,  73, 269, 440, 403, 424,  58,
+               280, 382, 245, 283, 394, 249, 300, 208, 155, 176, 435, 443, 452,
+               171, 165, 154, 183, 390, 282, 142, 407, 458, 195,  95, 389, 358,
+               412, 277, 425,  85, 226, 331, 220, 152, 357, 388,  79, 353, 271,
+               392, 181, 318, 148, 157, 405, 205, 268, 419, 423, 224, 198, 207,
+               272, 416,  67, 146, 417, 144, 256, 328, 184,  60, 281, 444, 459,
+               175, 253, 217, 310, 421, 413, 360, 393, 131, 140,  66,  71, 194,
+               411, 387, 384, 364, 397, 422, 158, 110, 125, 196, 402,  92, 201,
+               396, 102, 398, 386, 244, 383, 209, 206, 355, 365,  68, 251, 204,
+               433, 445, 254, 210,  59, 143, 437, 215, 123, 138, 174, 438, 250,
+               112,  56, 434, 258, 342, 428, 108, 200, 262, 312, 164, 203, 180,
+               182, 439, 399, 275, 323, 133, 429, 350, 447, 263, 120, 273, 267,
+               381, 356,  61, 401, 246, 352, 408, 414,  83, 265, 303,  96,  91,
+                93, 179, 135, 212, 361, 115,  84,  86, 363, 151, 409, 156, 351]
 
         location_dic_1 = [
             {'country_concept_id': 4330442,
              'country_source_value': 'US',
-             'location_source_value': n} for n in eicu_loc_id
+             'location_source_value': str(n)} for n in eicu_loc_id
         ]
 
         location_dic_2 = [

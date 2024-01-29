@@ -196,7 +196,7 @@ class TimeseriesPreprocessing(DataProcessor):
                             .pipe(self.harmonizer)
                             .pipe(self._compute_GCS)
                             .reset_index())
-        
+
         dtypes = ({v: tpe for v, tpe in self.dtypes.items() if v in timeseries.columns}
                   | {'time': np.float32, 'patient': str})
 
@@ -478,6 +478,9 @@ class TimeseriesPreprocessing(DataProcessor):
         total GCS score for every hour where all three scores were measured.
         This function is applied before resampling to ensure that all 
         components were measured at the same time.
+        
+        It also adds empty columns for each component of the GCS score if
+        they are not provided in the input dataframe.
         """
         glasgow_cols = ['glasgow_coma_score_eye',
                         'glasgow_coma_score_motor',
@@ -485,6 +488,9 @@ class TimeseriesPreprocessing(DataProcessor):
         if 'glasgow_coma_score' not in df.columns:
             df['glasgow_coma_score'] = df[glasgow_cols].sum(axis=1,
                                                             min_count=3)
+        for glasgow_col in glasgow_cols:
+            if glasgow_col not in df.columns:
+                df[glasgow_col] = np.nan
         return df
 
     def _forward_fill(self, df):

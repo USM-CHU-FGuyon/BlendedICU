@@ -61,7 +61,7 @@ class DataProcessor:
         self.mor_col = 'mortality'
         self.los_col = 'lengthofstay'
 
-        self.lower_los = self.config['lower_los']['value']
+        #self.lower_los = self.config['lower_los']['value']
         self.upper_los = self.config['upper_los']['value']
         self.preadm_anteriority = self.config['preadm_anteriority']['value']
         self.drug_exposure_time = self.config['drug_exposure_time']['value']

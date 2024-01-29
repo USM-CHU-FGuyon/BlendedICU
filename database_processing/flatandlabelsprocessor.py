@@ -41,7 +41,6 @@ class FlatAndLabelsProcessor(DataProcessor):
         else:
             raise ValueError(f'unit {unit} not understood.')
         labels[self.los_col] = labels['true_lengthofstay'].clip(upper=self.upper_los)
-        labels = labels.loc[labels[self.los_col] > self.lower_los]
         return labels
 
     def categorical_dummies(self, df, cols, min_count=1000):
