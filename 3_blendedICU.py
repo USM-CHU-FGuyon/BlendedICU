@@ -18,6 +18,6 @@ flp = blended_FLProcessor(datasets=['mimic3',
 
 flp.run_flat_and_labels()
 
-tsp = blendedicuTSP()
+tsp = blendedicuTSP(recompute_index=False)
 
 tsp.run()

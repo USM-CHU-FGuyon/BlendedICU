@@ -1,30 +1,57 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
 
-np.random.seed(974)
-
 
 class blendedicuTSP(TimeseriesPreprocessing):
-    def __init__(self):
+    def __init__(self, recompute_index=False):
+        '''
+        Use recompute_index=True if timeseries files may have changed location,
+        or have been deleted or created between the 2_{dataset} step and the
+        3_Blended step.
+        '''
         super().__init__(dataset='blended')
-        self.partially_processed_pths = self._get_ts_pths()
-        self.labels = self.load(self.savepath+'preprocessed_labels.parquet')
+        self.ts_pths = self._get_ts_pths(self.partiallyprocessed_ts_dir,
+                                         recompute_index)
 
-        self.labels['ts_path'] = (self.labels.source_dataset.map(self.partiallyprocessed_ts_dirs)
-                                  + self.labels.index
-                                  + '.parquet')
+    
+    def _get_ts_pths(self, ts_dir, recompute_index):
+        labels = self.load(self.savepath+'preprocessed_labels.parquet')
+        
+        if recompute_index:
+            index_df = self._build_full_index(ts_dir)
+        else:
+            index_df = self.read_index(ts_dir)
+        ts_pths = (labels[['uniquepid', 'source_dataset']]
+                   .join(index_df[['ts_pth']])
+                   .dropna(subset='ts_pth'))
+        index_pth = self._get_index_pth(ts_dir)
+        print(f'Saving {index_pth}')
+        ts_pths.to_csv(index_pth, sep=';')
+        return ts_pths
+        
 
-    def _get_ts_pths(self):
-        dirname = 'partially_processed_timeseries'
-        return {d: Path(f'{self.pth_dic[d]}/{dirname}').iterdir()
-                for d in self.datasets}
+    def _build_full_index(self, ts_dir):
+        index_dfs = [self.build_index(p) for p in Path(ts_dir).iterdir() if p.is_dir()]
+        index_df = pd.concat(index_dfs)
+        return index_df
+
+    def _time_to_hours(self, timeseries):
+        """
+        The time column is initially in seconds.
+        """
+        timeseries['time'] = timeseries['time'].div(3600).astype(int)
+        return timeseries
+
+    def _shuffled_ts_pths(self):
+        return (self.ts_pths.sample(frac=1, random_state=self.SEED)
+                    .ts_pth.to_list())
 
     def _make_pth_chunks(self):
-        pths = (self.labels.sample(frac=1, random_state=self.SEED)
-                    .ts_path.to_list())
+        pths = self._shuffled_ts_pths()
         return map(list, np.array_split(pths, 1+len(pths)/1000))
 
     def run(self):
@@ -38,10 +65,10 @@ class blendedicuTSP(TimeseriesPreprocessing):
 
         self.pth_chunks = self._make_pth_chunks()
 
-        for i, pths in enumerate(self.pth_chunks):
-            comp_quantiles = i == 0
-            self.timeseries = self.load(pths)
-            timeseries = self.timeseries.loc[:, self.cols.index]
+        for chunk_number, pths in enumerate(self.pth_chunks):
+            comp_quantiles = chunk_number == 0
+            timeseries = self.load(pths, verbose=False)
+            timeseries = timeseries.loc[:, self.cols.index]
 
             timeseries = (timeseries.pipe(self.clip_and_norm,
                                           cols=scalecols,
@@ -53,11 +80,5 @@ class blendedicuTSP(TimeseriesPreprocessing):
                                     .pipe(self._time_to_hours)
                                     .reset_index())
 
-            self.save_timeseries(timeseries, self.preprocessed_ts_dir)
-
-    def _time_to_hours(self, timeseries):
-        """
-        The time column is initially in seconds.
-        """
-        timeseries['time'] = (timeseries['time']/3600).astype(int)
-        return timeseries
+            ts_savepath = f'{self.preprocessed_ts_dir}/{chunk_number}/'
+            self.save_timeseries(timeseries, ts_savepath)

@@ -54,7 +54,8 @@ class mimicTSP(TimeseriesPreprocessing):
         }
 
     def run(self):
-
+        self.reset_dir()
+        
         self.outputevents = self.filter_tables(self.outputevents,
                                                kept_variables=self.kept_ts,
                                                **self.colnames_outputevents)
@@ -79,11 +80,10 @@ class mimicTSP(TimeseriesPreprocessing):
         patientids = self.timeser.patient.drop_duplicates()
         self.chunks = self.generate_patient_chunks(patientids)
 
-        for patient_chunk in self.chunks:
+        for chunk_number, patient_chunk in enumerate(self.chunks):
             ts_chunk = self.timeser.loc[self.timeser.patient.isin(patient_chunk)]
             med_chunk = self.medic.loc[self.medic.patient.isin(patient_chunk)]
-            self.ts_chunk = ts_chunk
-            self.med_chunk=med_chunk
 
             self.process_tables(ts_chunk,
-                                med=med_chunk)
+                                med=med_chunk,
+                                chunk_number=chunk_number)

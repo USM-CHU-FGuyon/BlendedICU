@@ -30,7 +30,7 @@ class hiridTSP(TimeseriesPreprocessing):
 
         kept_variables = (self.kept_ts+['Body weight', 'Body height measure'])
 
-        for ts_pth, pharma_pth in zip(self.ts_files, self.pharma_files):
+        for chunk_number, (ts_pth, pharma_pth) in enumerate(zip(self.ts_files, self.pharma_files)):
             self.timeseries = self.load(ts_pth, columns=self.loadcols)
 
             self.pharma = self.load(pharma_pth)
@@ -44,4 +44,4 @@ class hiridTSP(TimeseriesPreprocessing):
                                      self.kept_med,
                                      **self.med_colnames)
 
-            self.process_tables(ts, med=med)
+            self.process_tables(ts, med=med, chunk_number=chunk_number)

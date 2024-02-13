@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils.parquet_utils import compute_offset
 from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
 
@@ -159,7 +158,7 @@ class hiridPreparator(DataPreparator):
                                            'patientid': 'admissionid'})
                      .merge(self.admissions[['admissiontime', 'admissionid']],
                             on='admissionid')
-                     .pipe(compute_offset,
+                     .pipe(self.compute_offset,
                            col_intime='admissiontime',
                            col_measuretime='valuedate'))
 

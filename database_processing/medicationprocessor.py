@@ -3,7 +3,6 @@ from functools import reduce
 
 import pandas as pd
 
-from utils.parquet_utils import compute_offset
 from database_processing.dataprocessor import DataProcessor
 
 
@@ -108,9 +107,9 @@ class MedicationProcessor(DataProcessor):
 
     def _offset_calc(self, df):
         if self.offset_calc:
-            return compute_offset(df,
-                                  col_intime=self.col_admittime,
-                                  col_measuretime=self.col_time)
+            return self.compute_offset(df,
+                                       col_intime=self.col_admittime,
+                                       col_measuretime=self.col_time)
         else:
             return df
 
@@ -135,5 +134,4 @@ class MedicationProcessor(DataProcessor):
                  .pipe(self._get_ingredients)
                  .pipe(self._add_dummy_value)
                  .pipe(self._start_and_end))
-
         return med

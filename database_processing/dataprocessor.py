@@ -3,6 +3,7 @@ from functools import reduce
 import operator
 import json
 import shutil
+import os
 import chardet
 import random
 
@@ -17,7 +18,7 @@ class DataProcessor:
         self.n_patient_chunk = 1000
         self.pth_dic = self._read_json('paths.json')
         self.config = self._read_json('config.json')
-
+        self.blendedicu_pth = self.pth_dic["blended"]+'/'
         self.aux_pth = self.pth_dic['auxillary_files']
         self.savepath = self.pth_dic[self.dataset]
         self.voc_pth = self.pth_dic['vocabulary']
@@ -38,30 +39,19 @@ class DataProcessor:
         
         self.ohdsi_med = self._read_json(self.med_file)
         self.med_concept_id = self._med_concept_id_mapping()
-        self.formatted_ts_dir_blended = self.pth_dic['blended']+'formatted_timeseries/'
 
-        blended_formatted_ts = self.pth_dic["blended"] + '/formatted_timeseries/'
-        blended_formatted_med = self.pth_dic["blended"] + '/formatted_medications/'
+        self.formatted_ts_dir = self.blendedicu_pth + 'formatted_timeseries/'
+        self.formatted_med_dir = self.blendedicu_pth + 'formatted_medications/'
+        self.preprocessed_ts_dir = self.blendedicu_pth + 'preprocessed_timeseries/'
+        self.partiallyprocessed_ts_dir = self.blendedicu_pth + 'partially_processed_timeseries/'
 
-        self.formatted_ts_dirs = ({d: f'{blended_formatted_ts}/{d}/' for d in self.datasets}
-                                  | {'blended': blended_formatted_ts})
-        
-        self.formatted_med_dirs = ({d: f'{blended_formatted_med}/{d}/' for d in self.datasets}
-                                   | {'blended': blended_formatted_med})
-        
-        self.formatted_ts_dir = self.formatted_ts_dirs[self.dataset]
-        self.formatted_med_dir = self.formatted_med_dirs[self.dataset]
-        self.preprocessed_ts_dir = self.savepath+'preprocessed_timeseries/'
-        self.preprocessed_ts_dirs = {d: self.pth_dic[d]+'preprocessed_timeseries/' for d in self.datasets}
-        self.partiallyprocessed_ts_dir = self.savepath+'partially_processed_timeseries/'
-        self.partiallyprocessed_ts_dirs = {d: self.pth_dic[d]+'partially_processed_timeseries/' for d in self.datasets}
+        self._mkdirs()
 
         self.time_col = 'time'
         self.idx_col = 'patient'
         self.mor_col = 'mortality'
         self.los_col = 'lengthofstay'
 
-        #self.lower_los = self.config['lower_los']['value']
         self.upper_los = self.config['upper_los']['value']
         self.preadm_anteriority = self.config['preadm_anteriority']['value']
         self.drug_exposure_time = self.config['drug_exposure_time']['value']
@@ -84,10 +74,47 @@ class DataProcessor:
         self.labels_savepath = f'{self.parquet_pth}/labels.parquet'
         self.flat_savepath = f'{self.parquet_pth}/flat_features.parquet'
 
+    def _mkdirs(self):
+        for pth in (self.formatted_ts_dir,
+                    self.formatted_med_dir,
+                    self.preprocessed_ts_dir,
+                    self.partiallyprocessed_ts_dir):
+            Path(pth).mkdir(exist_ok=True, parents=True)
+
     def _concat(self, df1, df2):
         return ([df1.copy()] if df2.empty 
                 else [df2.copy()] if df1.empty
                 else [pd.concat([df1, df2])])
+    
+    def _get_index_pth(self, ts_dir):
+        return f'{ts_dir}/index.csv'
+    
+    def build_index(self, ts_dir):
+        """
+        Lists the files in a timeseries processing chunk and saves an index 
+        file with the list of paths to files of this folder.
+        """
+        index_pth = self._get_index_pth(ts_dir)
+        dic = {p.stem: p.resolve() for p in Path(ts_dir).glob('*parquet')}
+        index_df = (pd.DataFrame.from_dict(dic,
+                                           orient='index',
+                                           columns=['ts_pth'])
+                    .rename_axis('patient'))
+        print(f'Saving index file {index_pth}')
+        index_df.to_csv(index_pth, sep=';')
+        return index_df
+    
+    def read_index(self, ts_dir):
+        """
+        reads the index file of some directory
+        """
+        index_pth = self._get_index_pth(ts_dir)
+        try:
+            index_df = pd.read_csv(index_pth, sep=';', index_col='patient')
+        except FileNotFoundError:
+            print(f'Index file {index_pth} not found !')
+            index_df = pd.DataFrame(columns='ts_pth').rename_axis('patient')
+        return index_df
     
     def concat(self, df_list):
         if not isinstance(df_list, list):
@@ -114,15 +141,18 @@ class DataProcessor:
         """
         if verbose:
             print(f'Loading {pth}')
+        else:
+            print('Loading timeseries...')
         return pd.read_parquet(pth, **kwargs)
 
-    def save(self, df, savepath, pyarrow_schema=None):
+    def save(self, df, savepath, pyarrow_schema=None, verbose=True):
         """
         convenience function: save safely a file to parquet by creating the 
         parent directory if it does not exist.
         """
-        Path(savepath).parents[0].mkdir(parents=True, exist_ok=True)
-        print(f'   saving {savepath}')
+        Path(savepath).parent.mkdir(parents=True, exist_ok=True)
+        if verbose:
+            print(f'   saving {savepath}')
         df.to_parquet(savepath, schema=pyarrow_schema)
         return df
 
@@ -153,15 +183,23 @@ class DataProcessor:
         return _rglob_list
 
     def reset_dir(self):
-        pth_preprocessed_ts = Path(self.preprocessed_ts_dir)
-        pth_partprocessed_ts = Path(self.partiallyprocessed_ts_dir)
-        proceed = input(f'Delete contents of {pth_preprocessed_ts}  and '
-                        f'{pth_partprocessed_ts} ? [n], y')
+        if self.dataset =='blended':
+            del_dir = Path(self.preprocessed_ts_dir)
+            del_dir_as_string = f'{del_dir}/*'
+            del_dir_iter = del_dir.iterdir()
+        else:
+            del_dir = Path(self.partiallyprocessed_ts_dir)
+            del_dir_as_string = f'{del_dir}/{self.dataset}_*'
+            del_dir_iter = del_dir.glob(f'{self.dataset}_*')
+        proceed = input(f'Delete contents of \n{del_dir_as_string} ? [n], y')
         if proceed == 'y':
-            self.rmdir(pth_preprocessed_ts)
-            self.rmdir(pth_partprocessed_ts)
-            pth_preprocessed_ts.mkdir(parents=True)
-            pth_partprocessed_ts.mkdir(parents=True)
+            for pth in del_dir_iter:
+                print(f'   -> Removing {pth}')
+                try:
+                    self.rmdir(pth)
+                except NotADirectoryError:
+                    os.remove(pth)
+        print(' Done\n\n')
 
     def _load_mapping(self, pth):
         """

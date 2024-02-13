@@ -25,6 +25,7 @@ class TimeseriesPreprocessing(DataProcessor):
         self.kept_med = self._kept_meds()
         self.index = None
 
+        #TODO : move this to ts_variables.csv
         d = ({'time':{'blended':'time', 'eicu': 'time', 'mimic':'time', 'mimic3': 'time', 'amsterdam': 'time', 'hirid': 'time', 'is_numeric':1,'agg_method': 'last'}, 
              'hour':{'blended':'hour', 'eicu': 'hour', 'mimic':'hour', 'mimic3': 'time','amsterdam': 'hour', 'hirid': 'hour', 'is_numeric':1,'agg_method': 'last'}}
              | {med: {'blended':med, 'eicu': med, 'mimic':med, 'mimic3': med,'amsterdam': med, 'hirid': med, 'is_numeric':1, 'agg_method':'last', 'categories':'drug'} for med in self.kept_med})
@@ -56,7 +57,8 @@ class TimeseriesPreprocessing(DataProcessor):
                        ts_hor=None,
                        med=None,
                        admission_hours=None,
-                       stop_at_first_chunk=False):
+                       stop_at_first_chunk=False,
+                       chunk_number=None):
         '''
         time should be an int in hour
         patient a unique patient identifier.
@@ -72,11 +74,14 @@ class TimeseriesPreprocessing(DataProcessor):
              This can be useful for debugging or testing the pipeline on a 
              single chunk
         '''
+        if chunk_number is None:
+            raise ValueError('Please specify chunk number when calling process_tables')
         t_max = self.upper_los*24*3600
 
         timeseries = self.format_raw_data(ts_ver=ts_ver,
                                           ts_hor=ts_hor,
-                                          med=med)
+                                          med=med,
+                                          chunk_number=chunk_number)
 
         time = timeseries.index.get_level_values(1)
         timeseries = timeseries.loc[(time >= 0) & (time < t_max)]
@@ -107,7 +112,8 @@ class TimeseriesPreprocessing(DataProcessor):
         if stop_at_first_chunk:
             raise Exception('Stopped after 1st chunk, deactivate '
                             '"stop_at_first_chunk" to keep running.')
-        self.save_timeseries(self.chunk, self.partiallyprocessed_ts_dir)
+        ts_savepath = f'{self.partiallyprocessed_ts_dir}/{self.dataset}_{chunk_number}/'
+        self.save_timeseries(self.chunk, ts_savepath)
 
     def filter_tables(self,
                       table,
@@ -137,7 +143,8 @@ class TimeseriesPreprocessing(DataProcessor):
     def format_raw_data(self,
                         ts_ver=None,
                         ts_hor=None,
-                        med=None):
+                        med=None,
+                        chunk_number=None):
         """
         This function creates the data for the raw blendedICU dataset. 
         ts_ver:  
@@ -219,12 +226,15 @@ class TimeseriesPreprocessing(DataProcessor):
                                 'end': pa.float32(),
                                 'value': pa.float32()})
 
+        ts_savepath = f'{self.formatted_ts_dir}/{self.dataset}_{chunk_number}/'
+        med_savepath = f'{self.formatted_med_dir}/{self.dataset}_{chunk_number}/'
+
         self.save_timeseries(timeseries,
-                             self.formatted_ts_dir, 
+                             ts_savepath, 
                              pyarrow_schema=ts_schema)
 
         self.save_timeseries(med,
-                             self.formatted_med_dir,
+                             med_savepath,
                              pyarrow_schema=med_schema)
 
         return timeseries.set_index(cols_index)
@@ -530,15 +540,22 @@ class TimeseriesPreprocessing(DataProcessor):
         Saves a table to parquet. The user may specify a pyarrow schema.
         """
         Path(ts_savepath).mkdir(exist_ok=True, parents=True)
-
+        print(ts_savepath)
         patient_ts = (timeseries.reset_index(drop=True)
                                 .set_index('patient')
                                 .groupby(level=0))
-
+        patient_pths = {}
         for patient, df in patient_ts:
+            patient_pths[patient] = f'{ts_savepath}{patient}.parquet'
             self.save(df,
-                      f'{ts_savepath}{patient}.parquet',
+                      patient_pths[patient],
                       pyarrow_schema=pyarrow_schema)
+        self._save_index(patient_pths, ts_savepath)
+
+    def _save_index(self, patient_pths, ts_savepath):
+        (pd.Series(patient_pths, name='ts_pth')
+         .rename_axis('patient')
+         .to_csv(ts_savepath+'/index.csv', sep=';'))
 
     def _kept_meds(self):
         """convenience function to get the list of included medications."""
@@ -610,8 +627,9 @@ class TimeseriesPreprocessing(DataProcessor):
         """
         mask = mask_bool.astype(int).replace({0: np.nan})
         inv_mask_bool = ~mask_bool
-        count_non_measurements = inv_mask_bool.cumsum() \
-            - inv_mask_bool.cumsum().where(mask_bool).ffill().fillna(0)
+        inv_mask_cumsum = inv_mask_bool.cumsum()
+        count_non_measurements = (inv_mask_cumsum
+                                  - inv_mask_cumsum.where(mask_bool).ffill().fillna(0))
         decay_mask = (mask.ffill().fillna(0)
                       / (count_non_measurements * decay_rate).replace(0, 1))
         return decay_mask

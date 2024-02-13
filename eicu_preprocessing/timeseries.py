@@ -84,12 +84,12 @@ class eicuTSP(TimeseriesPreprocessing):
 
         admission_hours = self._get_admission_hours()
 
-        for i, pths in enumerate(zip(self.tslab_files,
-                                     self.tsresp_files,
-                                     self.tsnurse_files,
-                                     self.tsperiodic_files,
-                                     self.tsaperiodic_files,
-                                     self.tsinout_files)):
+        for chunk_number, pths in enumerate(zip(self.tslab_files,
+                                                self.tsresp_files,
+                                                self.tsnurse_files,
+                                                self.tsperiodic_files,
+                                                self.tsaperiodic_files,
+                                                self.tsinout_files)):
 
             tslab, tsresp, tsnurse, tsperiodic, tsaperiodic, tsinout = map(self.load, pths)
 
@@ -125,11 +125,8 @@ class eicuTSP(TimeseriesPreprocessing):
                                       how='outer',
                                       on=['patient', 'time'])
 
-            self.ts_ver=ts_ver
-            self.ts_hor=ts_hor
-
             self.process_tables(ts_ver,
                                 ts_hor,
                                 med=medication_chunk,
                                 admission_hours=admission_hours,
-                                stop_at_first_chunk=False)
+                                chunk_number=chunk_number)

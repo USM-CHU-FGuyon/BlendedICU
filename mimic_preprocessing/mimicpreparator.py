@@ -181,8 +181,7 @@ class mimicPreparator(DataPreparator):
                                       col_admittime='intime',
                                       offset_calc=True,
                                       unit_offset='second',
-                                      unit_los='day'
-                                      )
+                                      unit_los='day')
         self.med = self.mp.run(inputevents)
         return self.save(self.med, self.med_savepath)
 

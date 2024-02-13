@@ -12,7 +12,7 @@ class FlatAndLabelsProcessor(DataProcessor):
         self.flat = None
         self.labels = None
         self.ts_patients = self.get_ts_patients()
-
+        
     def preprocess_labels(self):
         """
         This should be defined in each subclass.
@@ -55,25 +55,24 @@ class FlatAndLabelsProcessor(DataProcessor):
             df.loc[df[f].isin(vcounts.loc[vcounts < 1000].index), f] = 'misc'
         return pd.get_dummies(df, columns=cols)
 
-    def get_ts_patients(self):
-        """
-        Gets the sorted list of patients having timeseries data.
-        """
-        preprocessed_ts_dir = Path(self.savepath+'partially_processed_timeseries/')
-        preprocessed_ts_dir.mkdir(exist_ok=True, parents=True)
-        stems = [f.stem for f in Path(preprocessed_ts_dir).iterdir()]
-        try:
-            ts_patients = pd.to_numeric(stems, downcast='integer')
-        except ValueError:
-            ts_patients = stems
-        return sorted(ts_patients)
-
     def _reindexing(self, df, astypes={}):
         df.index = df.index.map(lambda x: f'{self.dataset}-{x}')
         return (df.rename_axis(self.idx_col)
                   .reindex(self.ts_patients)
                   .astype(astypes)
                   .dropna(how='all'))
+
+    def get_ts_patients(self):
+        """
+        Gets the sorted list of patients having timeseries data.
+        """
+        ts_dir = Path(self.partiallyprocessed_ts_dir)
+        regex = '*' if self.dataset=='blended' else f'{self.dataset}*'
+
+        index_pths = [f'{f}/index.csv' for f in ts_dir.glob(regex) if f.is_dir()]
+        index_dfs = [pd.read_csv(pth, sep=';', index_col='patient') for pth in index_pths]
+        index_df = pd.concat(index_dfs)
+        return sorted(index_df.index)
 
     def run_labels(self):
         self.labels = self.preprocess_labels()

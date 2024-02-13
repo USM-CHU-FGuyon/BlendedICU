@@ -1,4 +1,5 @@
 from pathlib import Path
+import warnings
 from datetime import datetime, timedelta
 import hashlib
 import pandas as pd
@@ -10,30 +11,26 @@ from omop_cdm import cdm
 
 
 class OMOP_converter(blendedicuTSP):
-    def __init__(self,
-                 initialize_tables=False,
-                 parquet_format=True,
-                 full_init=True):
+    def __init__(self, initialize_tables=False, recompute_index=True):
+        
         super().__init__()
-        self.toparquet = parquet_format
+        self.tables_initialized = False
         self.data_pth = self.savepath
         self.ref_date = datetime(year=2023, month=1, day=1)
         self.end_date = datetime(year=2099, month=12, day=31)
         self.adm_measuredat = self.flat_hr_from_adm.total_seconds()
         self.admission_data_datetime = (self.ref_date + pd.Timedelta(self.adm_measuredat, unit='second'))
         self.n_chunks = 100
-        if full_init:
-            self.labels = self._load_labels()
-            self.ts_pths_chunks, self.med_pths_chunks = self._get_pth_chunks()
+        
+        self.labels = self._load_labels()
+        self.ts_pths = self._get_ts_pths(self.formatted_ts_dir,
+                                         recompute_index=recompute_index)
+        self.med_pths = self._get_ts_pths(self.formatted_med_dir,
+                                          recompute_index=recompute_index)
+        self.ts_pths_chunks = self._get_chunks(self.ts_pths.ts_pth.to_list())
+        self.med_pths_chunks = self._get_chunks(self.med_pths.ts_pth.to_list())
 
-        pth_concept_table = fr'{self.aux_pth}OMOP_vocabulary/CONCEPT.parquet'
-        self.omop_concept = pd.read_parquet(pth_concept_table,
-                                            columns=['concept_name',
-                                                     'concept_code',
-                                                     'domain_id',
-                                                     'vocabulary_id',
-                                                     'concept_class_id',
-                                                     'standard_concept'])
+        self.omop_concept = self._get_omop_concept()
         self.savedir = f'{self.data_pth}/OMOP-CDM/'
         print(self.savedir)
         self.start_index = {
@@ -120,46 +117,38 @@ class OMOP_converter(blendedicuTSP):
 
         self.concept_unit = self.omop_concept.loc[self.units_concept_ids]
 
-        self.concept_table()
+        self.concept, self.concept_table = self._concept_table()
         
-        if initialize_tables:
-            self.source_to_concept_map_table()
-
-            self.location_table()
-            self.care_site_table()
-            self.person_table()
-            self.visit_occurrence_table()
-            self.death_table()
-            self.domain_table()
-            self.observation_table()
-
         self.units = self._get_units()
-        
         self.measurement_schema = self._measurement_schema()
         self.observation_schema = self._observation_schema()
         self.drug_exposure_schema = self._drug_exposure_schema()
-
-    def _get_pth_chunks(self, shuffleseed=974):
-        '''
-        rglob lists all files, then sorts them and shuffle them with a seed 
-        to make a reproducible unsorted order.
-        then paths are split into a list of chunks.
-        '''
-        ts_pths = self.rglob(self.data_pth+'formatted_timeseries/',
-                                         '*.parquet',
-                                         verbose=True,
-                                         sort=True,
-                                         shuffleseed=shuffleseed)
-        med_pths = self.rglob(self.data_pth+'formatted_medications/',
-                                          '*.parquet',
-                                          verbose=True,
-                                          sort=True,
-                                          shuffleseed=shuffleseed)
         
-        ts_pths_chunks = self._get_chunks(ts_pths)
-        med_pths_chunks = self._get_chunks(med_pths)
-        return ts_pths_chunks, med_pths_chunks
-
+        if initialize_tables:
+            self._initialize_tables()
+        
+    def _initialize_tables(self):
+        print('\nInitializing tables')
+        self.source_to_concept_map_table()
+        self.location_table()
+        self.care_site_table()
+        self.person_table()
+        self.visit_occurrence_table()
+        self.death_table()
+        self.domain_table()
+        self.observation_table()
+        print('   -> Done')
+        self.tables_initialized = True
+        
+    def _get_omop_concept(self):
+        pth_concept_table = fr'{self.aux_pth}OMOP_vocabulary/CONCEPT.parquet'
+        return pd.read_parquet(pth_concept_table,
+                               columns=['concept_name',
+                                        'concept_code',
+                                        'domain_id',
+                                        'vocabulary_id',
+                                        'concept_class_id',
+                                        'standard_concept'])
     def _measurement_schema(self):
         schema = pa.schema([('value_as_number', pa.float32()),
                             ('time', pa.float32()),
@@ -242,8 +231,8 @@ class OMOP_converter(blendedicuTSP):
                             ])
         return schema
         
-    def _get_chunks(self, pths):
-        return map(list, np.array_split(pths, self.n_chunks))
+    def _get_chunks(self, pth_list):
+        return map(list, np.array_split(pth_list, self.n_chunks))
         
     def source_to_concept_map_table(self):
         ts_mapping = self.cols.concept_id.dropna().astype(int)
@@ -261,7 +250,6 @@ class OMOP_converter(blendedicuTSP):
         self.source_to_concept_map['valid_end_date'] = self.end_date
 
         self.source_to_concept_mapping = self.source_to_concept_map.set_index('source_code')['target_concept_id']
-        
         
     def _get_units(self):
         """
@@ -303,7 +291,7 @@ class OMOP_converter(blendedicuTSP):
         person = cdm.tables['PERSON']
         person_labels = self.labels.drop_duplicates(subset='uniquepid')
         person['gender_concept_id'] = person_labels.sex.map({1: 8507,
-                                                                  0: 8532})
+                                                             0: 8532})
         person['year_of_birth'] = self.ref_date.year - person_labels['raw_age']
         person['birth_datetime'] = (person.year_of_birth
                                          .apply(lambda x: datetime(year=int(x),
@@ -357,6 +345,8 @@ class OMOP_converter(blendedicuTSP):
                                                 '_source_visit_id'])
                                  .set_index('visit_occurrence_id', drop=False))
         
+        self.visit_occurrence_ids = self.visit_occurrence.visit_occurrence_id.unique()
+        
         self.labels.index = self.labels.patient.map(self.visit_mapper)
         self.labels = self.labels.rename_axis('visit_occurrence_id')
 
@@ -376,7 +366,6 @@ class OMOP_converter(blendedicuTSP):
                       .drop_duplicates(subset='person_id'))
 
     def _add_measurement(self, varname, timeseries=None, patients=[]):
-        self.ts = timeseries
 
         print(f'collecting {varname}')
         if timeseries is None:
@@ -423,6 +412,9 @@ class OMOP_converter(blendedicuTSP):
 
 
     def measurement_table(self, start_chunk=0):
+        if not self.tables_initialized:
+            self._initialize_tables()
+        
         start_index = self.start_index['measurement']
         self.admission_measurements = ['raw_height', 'raw_weight']
         self.ts_measurements = [
@@ -520,7 +512,6 @@ class OMOP_converter(blendedicuTSP):
 
         self.observation['observation_date'] = pd.to_datetime(self.observation['observation_date'])
 
-
     def _add_drugs(self, chunk):
         df = pd.DataFrame()
         df['_patient'] = chunk.patient
@@ -546,8 +537,9 @@ class OMOP_converter(blendedicuTSP):
             df['drug_exposure_id'] = self.drug_exposure.index.max() + 1 + df.index
         return pd.concat([self.drug_exposure, df]).set_index('drug_exposure_id')
 
-
     def drug_exposure_table(self, start_chunk=0):
+        if not self.tables_initialized:
+            self._initialize_tables()
         for i, pth_chunk in enumerate(self.med_pths_chunks):
             if i < start_chunk:
                 continue
@@ -609,11 +601,11 @@ class OMOP_converter(blendedicuTSP):
         start_index = self.start_index['domain']
         self.domain['domain_id'] = np.arange(start_index, start_index+len(self.domain))
 
-    def concept_table(self):
+    def _concept_table(self):
         print('Concept_table...')
-        self.concept = cdm.tables['CONCEPT']
+        concept = cdm.tables['CONCEPT']
 
-        self.concept_dic_misc = [
+        concept_dic_misc = [
             {'concept_id': 8844,
              'concept_name': 'Other Place of Service',
              'domain_id': 'Visit',
@@ -630,7 +622,7 @@ class OMOP_converter(blendedicuTSP):
              'concept_code': '283X00000X'},
         ]
 
-        self.concept_ids_misc = [
+        concept_ids_misc = [
             32037,
             9203,
             4021813,
@@ -649,7 +641,7 @@ class OMOP_converter(blendedicuTSP):
             4330442,
             ]
 
-        self.concept_ids_flat = [
+        concept_ids_flat = [
             4265453,  # age
             4099154,  # weight
             607590,  # height
@@ -660,26 +652,27 @@ class OMOP_converter(blendedicuTSP):
             'raw_weight': 4099154
             })
 
-        self.concept_ids_units = self.concept_unit.index.to_list()
+        concept_ids_units = self.concept_unit.index.to_list()
         
         idx_med = self.omop_concept['concept_name'].isin(self.kept_med)
-        self.concept_ids_med = self.omop_concept.loc[idx_med].index.to_list()
+        concept_ids_med = self.omop_concept.loc[idx_med].index.to_list()
 
-        self.concept_ids_ts = self.cols.concept_id.dropna().astype(int).to_list()
+        concept_ids_ts = self.cols.concept_id.dropna().astype(int).to_list()
 
-        self.concept_ids = (self.concept_ids_misc
-                            + self.concept_ids_obs.to_list()
-                            + self.concept_ids_flat
-                            + self.concept_ids_ts
-                            + self.concept_ids_med
-                            + self.concept_ids_units
-                            )
+        concept_ids = (concept_ids_misc
+                       + self.concept_ids_obs.to_list()
+                       + concept_ids_flat
+                       + concept_ids_ts
+                       + concept_ids_med
+                       + concept_ids_units)
 
-        concept_data = self.omop_concept.loc[np.unique(self.concept_ids)]
+        concept_data = self.omop_concept.loc[np.unique(concept_ids)].reset_index()
 
-        self.concept = pd.concat([self.concept, concept_data])
+        concept = pd.concat([concept, concept_data]).set_index('concept_id', drop=False)
 
-        self.concept_mapper = self.concept.reset_index().set_index('concept_name')['concept_id']
+        concept_mapper = concept.set_index('concept_name')['concept_id']
+        return concept, concept_mapper
+
 
     def location_table(self):
         '''
@@ -753,6 +746,33 @@ class OMOP_converter(blendedicuTSP):
         df = pd.read_parquet(labels_pth).reset_index()
         return df
 
+    def _visits_exist(self, table, name):
+        '''
+        For a table that has a visit_occurrence_id column, ensures that 
+        every visit_occurrence_id entry is in the VISIT_OCCURRENCE table.
+        '''
+        col = 'visit_occurrence_id'
+        if col in table.columns:
+            table_visits = table[col].drop_duplicates()
+            found = table_visits.isin(self.visit_occurrence_ids)
+            if not found.all():
+                self.found = found
+                self.table = table
+                self.col = col
+                notfound = table_visits.loc[~found].to_list()
+                warnings.warn(
+                    UserWarning(
+                    f'{len(notfound)} visit_occurrence_ids from {name} were not'
+                    f'found in visit_occurrence table'))
+        
+
+    def _sanity_checks(self, table, name):
+        '''
+        A set of sanity checks that will be made at every table export.
+        '''
+        self._visits_exist(table, name)
+        
+
     def export_table(self,
                      table,
                      name,
@@ -765,6 +785,8 @@ class OMOP_converter(blendedicuTSP):
         * to parquet if mode is "parquet". This mode requires to specify 
         a chunkindex for saving several parquet files in the same directory.
         """
+        table = table.reset_index(drop=True)
+        self._sanity_checks(table, name)
         if mode in ['w', 'a']:
             savepath = f'{self.savedir}/{name}.csv'
             print(f'Saving {savepath}')
@@ -784,9 +806,10 @@ class OMOP_converter(blendedicuTSP):
         Path(self.savedir).mkdir(exist_ok=True)
 
         for name, table in cdm.tables.items():
-            self.export_table(table, name)
+            if name.lower() not in ['measurement', 'drug_exposure']:
+                self.export_table(table, name)
 
-        self.export_table(self.concept.reset_index(), 'CONCEPT')
+        self.export_table(self.concept, 'CONCEPT')
         self.export_table(self.death, 'DEATH')
         self.export_table(self.care_site, 'CARE_SITE')
         self.export_table(self.observation,

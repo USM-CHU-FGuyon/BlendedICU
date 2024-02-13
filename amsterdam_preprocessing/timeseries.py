@@ -49,7 +49,7 @@ class amsterdamTSP(TimeseriesPreprocessing):
     
     def run(self):
         self.reset_dir()
-        for i, data_pth in enumerate(self.ts_chunks):
+        for chunk_number, data_pth in enumerate(self.ts_chunks):
             numericitems_chunk = self.load(data_pth, columns=self.tscols)
 
             chunk_ids = numericitems_chunk.admissionid.unique()
@@ -73,4 +73,4 @@ class amsterdamTSP(TimeseriesPreprocessing):
             self.process_tables(ts_ver=self.ts_table,
                                 ts_hor=self.gcs_scores_chunk,
                                 med=self.med_table,
-                                stop_at_first_chunk=False)
+                                chunk_number=chunk_number)
