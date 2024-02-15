@@ -12,7 +12,7 @@ mimic_prep = mimicPreparator(
     labevents_pth='/hosp/labevents.csv.gz')
 
 mimic_prep.load_raw_tables()
-
+mimic_prep.icustays = mimic_prep._icustays()
 mimic_prep.gen_labels()
 mimic_prep.gen_flat()
 mimic_prep.gen_medication()
