@@ -7,32 +7,44 @@ from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
 
 
 class blendedicuTSP(TimeseriesPreprocessing):
-    def __init__(self, recompute_index=False):
+    def __init__(self, compute_index=False):
         '''
-        Use recompute_index=True if timeseries files may have changed location,
+        Use compute_index=True if timeseries files may have changed location,
         or have been deleted or created between the 2_{dataset} step and the
         3_Blended step.
+        if compute_index is False, index files from each directory in 
+        partially_processed_timeseries will be read and concatenated.
         '''
         super().__init__(dataset='blended')
-        self.ts_pths = self._get_ts_pths(self.partiallyprocessed_ts_dir,
-                                         recompute_index)
+        self.ts_pths = self.get_ts_pths(self.partiallyprocessed_ts_dir,
+                                         compute_index)
 
     
-    def _get_ts_pths(self, ts_dir, recompute_index):
+    def get_ts_pths(self, ts_dir, compute_index=False, sample=None):
         labels = self.load(self.savepath+'preprocessed_labels.parquet')
         
-        if recompute_index:
+        if compute_index:
             index_df = self._build_full_index(ts_dir)
         else:
-            index_df = self.read_index(ts_dir)
+            index_df = self._read_full_index(ts_dir)
+
+        kwargs = {'frac': 1} if sample is None else {'n': sample}
+    
         ts_pths = (labels[['uniquepid', 'source_dataset']]
                    .join(index_df[['ts_pth']])
-                   .dropna(subset='ts_pth'))
+                   .dropna(subset='ts_pth')
+                   .groupby('source_dataset')
+                   .sample(**kwargs))
         index_pth = self._get_index_pth(ts_dir)
+        
         print(f'Saving {index_pth}')
         ts_pths.to_csv(index_pth, sep=';')
         return ts_pths
         
+    def _read_full_index(self, ts_dir):
+        index_dfs = [self.read_index(p) for p in Path(ts_dir).iterdir() if p.is_dir()]
+        index_df = pd.concat(index_dfs)
+        return index_df
 
     def _build_full_index(self, ts_dir):
         index_dfs = [self.build_index(p) for p in Path(ts_dir).iterdir() if p.is_dir()]

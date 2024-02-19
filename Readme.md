@@ -34,7 +34,9 @@ keywords = {OMOP common data format, Intensive care unit database, Data integrat
 }
 ```
 This repository contains the codes and files that allow the creation of the 
-BlendedICU dataset from the AmsterdamUMCdb, eICU, HiRID, and MIMIC-IV databases.
+BlendedICU dataset from the AmsterdamUMCdb, eICU, HiRID, MIMIC-III and MIMIC-IV databases.
+
+[<img src="plot/kdeplot.png" width="600"/>](plot/kdeplot.png)
 
 Before you begin
 ---

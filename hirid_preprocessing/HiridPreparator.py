@@ -1,4 +1,3 @@
-import tarfile
 from pathlib import Path
 
 import pandas as pd
@@ -11,25 +10,21 @@ class hiridPreparator(DataPreparator):
     def __init__(
             self,
             variable_ref_path,
-            raw_ts_path,
-            raw_pharma_path,
+            ts_path,
+            pharma_path,
             admissions_path,
-            imputedstage_path,
-            untar=True):
+            imputedstage_path):
 
         super().__init__(dataset='hirid', col_stayid='admissionid')
         self.col_los = 'lengthofstay'
         self.unit_los = 'second'
-        self.variable_ref_path = self.source_pth+variable_ref_path
-        self.ts_tar_path = self.source_pth+raw_ts_path
-        self.pharma_tar_path = self.source_pth+raw_pharma_path
-        self.admissions_tar_path = self.source_pth+admissions_path
-        self.admissions_untar_path = self.source_pth+ '/reference_data/'
-        self.admissions_path = f'{self.admissions_untar_path}/general_table.csv'
-        self.imputedstage_tar_path = self.source_pth+imputedstage_path
-        self.ts_path = self.source_pth + 'observation_tables/parquet/'
-        self.med_path = self.source_pth + 'pharma_records/parquet/'
-        self.imputedstage_path = self.source_pth + 'imputed_stage/parquet/'
+        self.variable_ref_path = self.source_pth + variable_ref_path
+        self.admissions_path = self.source_pth + admissions_path
+        self.ts_path = self.source_pth + ts_path
+        self.med_path = self.source_pth + pharma_path
+        self.imputedstage_path = self.source_pth + imputedstage_path
+        
+        self._check_files_untarred()
         
         self.ts_savepth = self.parquet_pth+'/timeseries_1000_patient_chunks/'
         self.pharma_savepth = self.parquet_pth+'/pharma_1000_patient_chunks/'
@@ -37,26 +32,25 @@ class hiridPreparator(DataPreparator):
 
         self.weights = None
         self.heights = None
-        if untar:
-            self._untar_files()
         
         self.admissions = self._load_admissions()
 
-    def _untar_files(self):
-        if input('Untar source files ? y/[n]')=='y': 
-            self._untar(self.admissions_tar_path, self.admissions_untar_path)
-            self._untar(self.ts_tar_path, self.source_pth)
-            self._untar(self.pharma_tar_path, self.source_pth)
-            self._untar(self.imputedstage_tar_path, self.source_pth)
+    def _check_files_untarred(self):
+        '''Checks that files were properly untarred at step 0.'''
+        notfound = False
+        files = [self.ts_path,
+                 self.med_path,
+                 self.imputedstage_path,
+                 self.admissions_path]
+        for file in files:
+            if not Path(file).exists():
+                notfound = True
+                print(f'\n/!\ {file} was not found, consider running step 0 to'
+                      ' untar Hirid source files\n')
+        if notfound:
+            raise ValueError('Some files are missing, see warnings above.')
             
-    def _untar(self, src, tgt):
-        print(f'Untarring \n   {src} \n   into \n   {tgt}\n   This has to be'
-              'done only once and can be deactivated by setting untar=False')
-        tar = tarfile.open(src)
-        tar.extractall(path=tgt)
-        tar.close()
-
-
+            
     def _load_ts_chunks(self):
         for p in Path(self.ts_path).iterdir():
             yield pd.read_parquet(p,

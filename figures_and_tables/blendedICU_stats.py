@@ -22,22 +22,16 @@ class Blendedicu_stats(blendedicuTSP):
 
         self.colors = {'amsterdam': 'tab:blue',
                        'eicu': 'tab:orange',
-                       'mimic': 'tab:green',
+                       'mimic4': 'tab:green',
                        'mimic3': 'tab:purple',
                        'hirid': 'tab:red'}
 
-        self.raw_ts_pths = self._get_pths(self.formatted_ts_dirs)
-        self.ts_pths_lst = sum([v for v in self.raw_ts_pths.values()], [])
-        self.med_pths = self._get_pths(self.formatted_med_dirs)
+        self.raw_ts_pths = self.get_ts_pths(self.formatted_ts_dir, sample=1000)
+        self.med_pths = self.get_ts_pths(self.formatted_med_dir, sample=1000)
 
-        self.omop = OMOP_converter(full_init=False)
+        self.omop = OMOP_converter(ts_pths=self.raw_ts_pths,
+                                   med_pths=self.med_pths)
 
-        
-    def _get_pths(self, dir_dic, sample=900):
-        
-        pths = {d: self.ls(pth, sort=False)
-                for d, pth in dir_dic.items() if d != 'blended'}
-        return {d: random.sample(v, sample) for d, v in pths.items()}
 
     def flat_stats(self):
         self.labels = pd.read_parquet(self.labels_pth)
@@ -53,12 +47,12 @@ class Blendedicu_stats(blendedicuTSP):
         self.n_caresites = self.group.care_site.nunique()
         self.n_stays = self.group.patient.nunique()
         self.n_patients = self.group.original_uniquepid.nunique()
-        self.age = self.group.age.mean()
-        self.age_std = self.group.age.std()
-        self.height = self.group.raw_height.mean()
+        self.age = self.group.raw_age.median()
+        self.age_std = self.group.raw_age.std()
+        self.height = self.group.raw_height.median()
         self.height_std = self.group.raw_height.std()
-        self.weight = self.group.weight.mean()
-        self.weight_std = self.group.weight.std()
+        self.weight = self.group.raw_weight.median()
+        self.weight_std = self.group.raw_weight.std()
 
         self.sex = self.group.sex.value_counts()/self.group.sex.count()
 
@@ -94,13 +88,13 @@ class Blendedicu_stats(blendedicuTSP):
             'amsterdam': '20109',
             'eicu': '139367',
             'hirid': '33932',
-            'mimic': '50048',
+            'mimic4': '50048',
             'mimic3': '.'})
         self.initial_icu_stays = pd.Series({
             'amsterdam': '23106',
             'eicu': '200859',
             'hirid': r'33932\textsuperscript{1}',
-            'mimic': '69619',
+            'mimic4': '69619',
             'mimic3': '57874'})
 
         self.n_variables, self.n_variables_std = self._n_variables()
@@ -166,7 +160,8 @@ class Blendedicu_stats(blendedicuTSP):
         }).unstack(level=1))
 
     def _n_variables(self):
-        self.raw_timeseries = (self.load(self.ts_pths_lst, verbose=False)
+        self.raw_timeseries = (self.load(self.raw_ts_pths.ts_pth.to_list(),
+                                         verbose=False)
                                .drop(columns='ventilator_mode'))
 
         self.n_variables_patients = ((self.raw_timeseries.drop(columns='time')
@@ -197,18 +192,14 @@ class Blendedicu_stats(blendedicuTSP):
     def ts_frequencies(self):
         print('Computing timeseries frequencies...')
         ts_freq, ts_freq_std = {}, {}
-        for dataset, pths in self.raw_ts_pths.items():
-            if not pths:
-                print('skipping {dataset}')
-                continue
+        for dataset, pths in self.raw_ts_pths.groupby('source_dataset'):
             print(f'  -> {dataset}')
-            ts = (self.load(pths, verbose=False)
-                  .drop(columns='ventilator_mode')
+            ts = (self.load(pths.ts_pth.to_list(), verbose=False)
+                  .drop(columns='ventilator_mode', errors='ignore')
                   .set_index('time', append=True)
                   .groupby(level=[0, 1]).mean().droplevel(1)
                   .groupby(level=0).count()
-                  .join(self.labels['true_lengthofstay'])
-                  )
+                  .join(self.labels['true_lengthofstay']))
 
             freqs = (ts.drop(columns='true_lengthofstay')
                        .div(ts.true_lengthofstay, axis=0))
@@ -241,12 +232,11 @@ class Blendedicu_stats(blendedicuTSP):
     def med_frequencies(self):
         print('Computing drug exposures...')
         self.med_freq = {}
-        for dataset, pths in self.med_pths.items():
-            print(f'   -> {dataset}')
-            if not pths:
-                print('skipping {dataset}')
-                continue
-            self.meds = (self.load(pths, columns=['variable'], verbose=False)
+        for dataset, pths in self.med_pths.groupby('source_dataset'):
+            print(f'  -> {dataset}')
+            self.meds = (self.load(pths.ts_pth.to_list(),
+                         columns=['variable'],
+                         verbose=False)
                          .reset_index()
                          .drop_duplicates())
 
@@ -298,10 +288,12 @@ class Blendedicu_stats(blendedicuTSP):
             ts_list = []
             print(var)
             unit_name = self.omop.units.loc[var].values[0]
-            title = '\n'.join(textwrap.wrap(self.omop_mapping[var],30))  # TODO exploiter la base telechargée...
-            for dataset, ts_pths in self.raw_ts_pths.items():
+            title = '\n'.join(textwrap.wrap(self.omop_mapping[var], 30))
+            for dataset, ts_pths in self.raw_ts_pths.groupby('source_dataset'):
                 if self.is_measured.loc[var, dataset]:
-                    ts_list.append(self.load(ts_pths, verbose=False, columns=[var]))
+                    ts_list.append(self.load(ts_pths.ts_pth.tolist(),
+                                             verbose=False,
+                                             columns=[var]))
             
             self.ts_list = ts_list
             

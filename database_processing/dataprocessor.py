@@ -30,12 +30,12 @@ class DataProcessor:
         except KeyError:
             self.source_pth = None
         
-        self.med_file = self.aux_pth+'medications_v10.json'
+        self.med_file = self.aux_pth+'medications_v11.json'
         self.unittype_file = self.user_input_pth+'unit_type_v2.json'
         self.dischargeloc_file = self.user_input_pth+'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth+'admission_origins_v2.json'
 
-        self.datasets = ('eicu', 'mimic', 'mimic3', 'hirid', 'amsterdam')
+        self.datasets = ('eicu', 'mimic4', 'mimic3', 'hirid', 'amsterdam')
         
         self.ohdsi_med = self._read_json(self.med_file)
         self.med_concept_id = self._med_concept_id_mapping()

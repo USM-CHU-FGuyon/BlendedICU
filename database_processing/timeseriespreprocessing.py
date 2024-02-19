@@ -25,10 +25,32 @@ class TimeseriesPreprocessing(DataProcessor):
         self.kept_med = self._kept_meds()
         self.index = None
 
-        #TODO : move this to ts_variables.csv
-        d = ({'time':{'blended':'time', 'eicu': 'time', 'mimic':'time', 'mimic3': 'time', 'amsterdam': 'time', 'hirid': 'time', 'is_numeric':1,'agg_method': 'last'}, 
-             'hour':{'blended':'hour', 'eicu': 'hour', 'mimic':'hour', 'mimic3': 'time','amsterdam': 'hour', 'hirid': 'hour', 'is_numeric':1,'agg_method': 'last'}}
-             | {med: {'blended':med, 'eicu': med, 'mimic':med, 'mimic3': med,'amsterdam': med, 'hirid': med, 'is_numeric':1, 'agg_method':'last', 'categories':'drug'} for med in self.kept_med})
+        d = ({'time':{'blended':'time',
+                      'eicu': 'time',
+                      'mimic4':'time',
+                      'mimic3': 'time',
+                      'amsterdam': 'time',
+                      'hirid': 'time',
+                      'is_numeric':1,
+                      'agg_method': 'last'}, 
+             'hour':{'blended':'hour',
+                     'eicu': 'hour',
+                     'mimic4':'hour',
+                     'mimic3': 'time',
+                     'amsterdam': 'hour',
+                     'hirid': 'hour',
+                     'is_numeric':1,
+                     'agg_method': 'last'}}
+             | {med: {'blended':med,
+                      'eicu': med,
+                      'mimic4':med,
+                      'mimic3': med,
+                      'amsterdam': med,
+                      'hirid': med,
+                      'is_numeric':1,
+                      'agg_method':'last',
+                      'categories':'drug'}
+                for med in self.kept_med})
         self.med_time_hour = pd.DataFrame(d).T
         
         self.cols = self._cols()
@@ -47,8 +69,8 @@ class TimeseriesPreprocessing(DataProcessor):
             'amsterdam': self._harmonize_amsterdam,
             'hirid': self._harmonize_hirid,
             'eicu': self._harmonize_eicu,
-            'mimic': self._harmonize_mimic,
             'mimic3': self._harmonize_mimic3,
+            'mimic4': self._harmonize_mimic4,
             'blended': (lambda x: x)
         }[self.dataset]
 
@@ -349,7 +371,7 @@ class TimeseriesPreprocessing(DataProcessor):
         df.loc[temp_idx] = self._celsius_to_farenheit(df.loc[temp_idx])
         return df
 
-    def _harmonize_mimic(self, df):
+    def _harmonize_mimic3(self, df):
         """
         Unit conversion was necessary mostly for lab variables.
         """
@@ -364,10 +386,9 @@ class TimeseriesPreprocessing(DataProcessor):
         df['phosphate'] = df['phosphate']*0.323
         return df
 
-    def _harmonize_mimic3(self, df):
+    def _harmonize_mimic4(self, df):
         """
         Unit conversion was necessary mostly for lab variables.
-        Same as mimic: TO check.
         """
         df['temperature'] = self._celsius_to_farenheit(df['temperature'])
         df['blood_glucose'] = df['blood_glucose']*0.0555

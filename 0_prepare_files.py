@@ -26,6 +26,11 @@ om = OMOP_Medications(pth_dic)
 
 ingredient_to_drug = om.run()
 
-mm = MedicationMapping(pth_dic)
+mm = MedicationMapping(pth_dic,
+                       datasets=['hirid', 
+                                 'amsterdam',
+                                 'mimic4',
+                                 'mimic3',
+                                 'eicu'])
 
-medication_json = mm.run(load_drugnames=True, fname='medications.json')
+medication_json = mm.run(load_drugnames=False, fname='medications.json')

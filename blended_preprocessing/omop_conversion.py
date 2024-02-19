@@ -11,7 +11,11 @@ from omop_cdm import cdm
 
 
 class OMOP_converter(blendedicuTSP):
-    def __init__(self, initialize_tables=False, recompute_index=True):
+    def __init__(self,
+                 initialize_tables=False,
+                 recompute_index=True,
+                 ts_pths=None,
+                 med_pths=None):
         
         super().__init__()
         self.tables_initialized = False
@@ -23,10 +27,13 @@ class OMOP_converter(blendedicuTSP):
         self.n_chunks = 100
         
         self.labels = self._load_labels()
-        self.ts_pths = self._get_ts_pths(self.formatted_ts_dir,
-                                         recompute_index=recompute_index)
-        self.med_pths = self._get_ts_pths(self.formatted_med_dir,
-                                          recompute_index=recompute_index)
+        self.ts_pths = self._get_ts_pths(ts_pths,
+                                         self.formatted_ts_dir,
+                                         recompute_index)
+        self.med_pths = self._get_ts_pths(med_pths,
+                                          self.formatted_med_dir,
+                                          recompute_index)
+
         self.ts_pths_chunks = self._get_chunks(self.ts_pths.ts_pth.to_list())
         self.med_pths_chunks = self._get_chunks(self.med_pths.ts_pth.to_list())
 
@@ -126,6 +133,12 @@ class OMOP_converter(blendedicuTSP):
         
         if initialize_tables:
             self._initialize_tables()
+        
+    def _get_ts_pths(self, ts_pths, ts_dir, compute_index):
+        if ts_pths is None:
+            return self.get_ts_pths(ts_dir, compute_index=compute_index)
+        else:
+            return ts_pths
         
     def _initialize_tables(self):
         print('\nInitializing tables')

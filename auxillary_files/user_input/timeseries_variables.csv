@@ -1,4 +1,4 @@
-concept_id;blended;eicu;mimic;mimic3;amsterdam;hirid;categories;user_min;user_max;is_numeric;agg_method
+concept_id;blended;eicu;mimic4;mimic3;amsterdam;hirid;categories;user_min;user_max;is_numeric;agg_method
 4239408;heart_rate;Heart Rate;Heart Rate;Heart Rate;Hartfrequentie;Heart rate;Vitals;0;;1;mean
 4353843;invasive_systolic_blood_pressure;systemicsystolic;Arterial Blood Pressure systolic;Arterial Blood Pressure systolic;ABP systolisch;Invasive systolic arterial pressure;Vitals;0;;1;mean
 4354253;invasive_diastolic_blood_pressure;systemicdiastolic;Arterial Blood Pressure diastolic;Arterial Blood Pressure diastolic;ABP diastolisch;Invasive diastolic arterial pressure;Vitals;0;;1;mean

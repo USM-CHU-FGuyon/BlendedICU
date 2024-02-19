@@ -25,9 +25,9 @@ class mimic3Preparator(DataPreparator):
         self.outputevents_savepath = f'{self.parquet_pth}/timeseriesoutputs.parquet'
         self.col_los = 'LOS'
         self.unit_los = 'day'
-        self.icustays = self._icustays()
         
-    def _icustays(self):
+        
+    def gen_icustays(self):
         admissions = pd.read_parquet(self.admissions_pth,
                                      columns=['HADM_ID',
                                               'ETHNICITY',

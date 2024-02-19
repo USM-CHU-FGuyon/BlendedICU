@@ -12,6 +12,7 @@ mimic3_prep = mimic3Preparator(chartevents_pth='CHARTEVENTS.csv.gz')
 
 mimic3_prep.load_raw_tables()
 
+mimic3_prep.icustays = mimic3_prep.gen_icustays()
 mimic3_prep.gen_labels()
 mimic3_prep.gen_flat()
 mimic3_prep.gen_medication()

@@ -2,56 +2,52 @@ from pathlib import Path
 
 import pandas as pd
 
-
-ingredients = [
-    'haloperidol', 'hypromellose', 'xylometazoline', 'simvastatin',
-    'enoximone', 'captopril', 'tranexamic acid', 'amlodipine',
-    'metoclopramide', 'erythromycin', 'levetiracetam',
-    'methylprednisolone', 'clonidine', 'amoxicillin', 'dexamethasone',
-    'felodipine', 'triamterene', 'desmopressin', 'spironolactone',
-    'clonazepam', 'mirtazapine', 'nimodipine', 'thiopental',
-    'vasopressin (USP)', 'ranitidine', 'glycopyrronium', 'neostigmine',
-    'warfarin', 'ketorolac', 'lansoprazole', 'octreotide', 'phenytoin',
-    'sulfamethoxazole', 'bisacodyl', 'atorvastatin', 'hydrocodone',
-    'carvedilol', 'diphenhydramine', 'tramadol', 'aspirin',
-    'atracurium', 'dobutamine', 'dopamine', 'fentanyl', 'flumazenil',
-    'pancuronium', 'succinylcholine', 'vecuronium', 'rocuronium',
-    'cisatracurium', 'sufentanil', 'propofol', 'milrinone',
-    'midazolam', 'epinephrine', 'norepinephrine', 'morphine',
-    'dexmedetomidine', 'furosemide', 'nitroglycerin', 'nicardipine',
-    'hydrazaline', 'labelatol', 'diltiazem', 'esmolol', 'amiodarone',
-    'nitroprusside', 'lidocaine', 'bumetanide', 'procainamide',
-    'nesiritide', 'hydromorphone', 'lorazepam', 'ketamine',
-    'methadone', 'pentobarbital', 'phenylephrine', 'angiotensin II',
-    'treprostinil', 'epoprostenol', 'argatroban', 'eptifibatide',
-    'bivalirudin', 'heparin', 'alteplase', 'tirofiban', 'lepirudin',
-    'abciximab', 'vancomycin', 'cefazolin', 'cefepime', 'piperacillin',
-    'metronidazole', 'ceftriaxone', 'ciprofloxacin', 'meropenem',
-    'levofloxacin', 'azithromycin', 'ceftazidime', 'acyclovir',
-    'ampicillin', 'fluconazole', 'clindamycin', 'linezolid',
-    'micafungin', 'gentamicin']
-
-
-class OMOP_Medications(object):
-    def __init__(self, pth_dic, ingredients=ingredients):
+class OMOP_Medications:
+    def __init__(self, pth_dic, ingredients=None):
+        '''A list of ingredients may be given as an input. 
+        If ingredients is None, the user_input/medication_ingredients.csv
+        file will be used as the list of ingredients.'''
         self.pth_to_voc = pth_dic['vocabulary']
+        self.pth_user_input = pth_dic['user_input']
         self.savedir = pth_dic['medication_mapping_files']
         self.savepath = self.savedir+'ohdsi_icu_medications.csv'
-        print('Loading CONCEPT table...')
-        self.concept = pd.read_parquet(self.pth_to_voc+'CONCEPT.parquet',
-                                       columns=['concept_id', 'concept_name']
-                                       )
-        print('Loading CONCEPT_RELATIONSHIP table...')
-        relationship_pth = self.pth_to_voc+'CONCEPT_RELATIONSHIP.parquet'
-        self.relations = pd.read_parquet(relationship_pth,
-                                         columns=['concept_id_1',
-                                                  'concept_id_2',
-                                                  'relationship_id'])
-
-        self.ingredients = ingredients
+        
+        self.concept = self._load_concept()
+        self.relations = self._load_concept_relationship()
+        
+        self.ingredients = self._get_ingredients(ingredients)
 
         self._check_unique_ingredients()
 
+    def _load_concept(self):
+        print('Loading CONCEPT table...')
+        concept_pth = self.pth_to_voc+'CONCEPT.parquet'
+        concept = pd.read_parquet(concept_pth,
+                                  columns=['concept_id', 'concept_name'])
+        return concept
+    
+    def _load_concept_relationship(self):
+        print('Loading CONCEPT_RELATIONSHIP table...')
+        relationship_pth = self.pth_to_voc+'CONCEPT_RELATIONSHIP.parquet'
+        concept_relationship = pd.read_parquet(relationship_pth,
+                                               columns=['concept_id_1',
+                                                        'concept_id_2',
+                                                        'relationship_id'])
+        return concept_relationship
+    
+    
+    def _get_ingredients(self, ingredients):
+        """
+        If ingredient is None: read ingredient file.
+        else: use the ingredient list provided"""
+        if ingredients is None: 
+            ingredients_pth = self.pth_user_input+'medication_ingredients.csv'    
+            print(f'Loading ingredients from {ingredients_pth}')
+            df = pd.read_csv(ingredients_pth)
+            ingredients = df.ingredient.to_list()
+        return ingredients
+        
+        
     def _check_unique_ingredients(self):
         vcounts = pd.Series(self.ingredients).value_counts()
         if vcounts.max() > 1:
@@ -83,13 +79,12 @@ class OMOP_Medications(object):
         df['drugname'] = (self.concept.loc[df.drug_id]
                                       .reset_index(drop=True))
 
-        df = df.loc[df.ingredient.isin(ingredients)]
+        df = df.loc[df.ingredient.isin(self.ingredients)]
 
         df = (df.pivot(columns='ingredient', values='drugname')
                 .apply(lambda x: pd.Series(x.dropna().values)))
 
         print(f'Saving {self.savepath}')
         df.to_csv(self.savepath, sep=';', index=None)
-
         self.ingredient_to_drug = df
         return self.ingredient_to_drug
