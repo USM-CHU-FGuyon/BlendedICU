@@ -1,4 +1,4 @@
-Welcome to the BlendedICU code repository
+![image](https://github.com/USM-CHU-FGuyon/BlendedICU/assets/104059079/c8c0a454-6cc1-4ea5-abee-06092c2739be)Welcome to the BlendedICU code repository
 ===
 This is the repository from [Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset](https://www.sciencedirect.com/science/article/abs/pii/S153204642300223X)
 
@@ -46,16 +46,12 @@ The codes require some user input to run.
 Fill the following paths in the `path.json` file. The file should be formatted as such:
 ```
 {
+  "data_path": "pth/to/BLENDED_ICU/",
   "eicu_source_path":"pth/to/eicu/installation/",
-  "eicu": "target/pth_eicu/,
-  "mimic_source_path": "pth/to/mimic/installation/",
-  "mimic": "target/pth_mimic/",
+  "mimic3_source_path": "pth/to/mimic3/installation/",
+  "mimic4_source_path": "pth/to/mimic4/installation/",
   "amsterdam_source_path": "pth/to/amsterdam/installation/",
-  "amsterdam": "target/pth_ams/",
   "hirid_source_path": "pth/to/hirid/installation/",
-  "hirid": "target/pth_hirid/",
-  "blended": "target/pth/to/BlendedICU/",
-  "results": "path/to/results/",
   "auxillary_files": "auxillary_files/",
   "vocabulary" : "auxillary_files/OMOP_vocabulary/",
   "user_input" : "auxillary_files/user_input/",
@@ -94,8 +90,8 @@ A name can only appear in a single category. Category names are case-sensitive.
 This file contains the correspondence of variable names from source databases. It is formatted as follows:
 
 ```
-concept_id;blended;eicu;mimic;amsterdam;hirid;categories;user_min;user_max;is_numeric;agg_method
-4239408;heart_rate;Heart Rate;Heart Rate;Hartfrequentie;Heart rate;Vitals;0;;1;mean
+concept_id;blended;eicu;mimic;amsterdam;hirid;categories;user_min;user_max;is_numeric;agg_method;unit_concept_id
+4239408;heart_rate;Heart Rate;Heart Rate;Hartfrequentie;Heart rate;Vitals;0;;1;mean;8541
 ```
 It also contains preprocessing options, such as user-defined minimum and maximum allowable values, and the aggregation method ('last' or 'mean') used when downsampling the original data.
 
