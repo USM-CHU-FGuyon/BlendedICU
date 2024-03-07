@@ -14,16 +14,16 @@ class mimic4Preparator(DataPreparator):
         super().__init__(dataset='mimic4', col_stayid='stay_id')
         self.chartevents_pth = self.source_pth+chartevents_pth
         self.labevents_pth = self.source_pth+labevents_pth
-        self.outputevents_pth = f'{self.parquet_pth}outputevents.parquet'
-        self.admissions_pth = f'{self.parquet_pth}admissions.parquet'
-        self.inputevents_pth = f'{self.parquet_pth}inputevents.parquet'
-        self.icustays_pth = f'{self.parquet_pth}icustays.parquet'
-        self.patients_pth = f'{self.parquet_pth}patients.parquet'
-        self.ditems_pth = f'{self.parquet_pth}d_items.parquet'
-        self.dlabitems_pth = f'{self.parquet_pth}d_labitems.parquet'
-        self.tslab_savepath = f'{self.parquet_pth}/timeserieslab.parquet'
-        self.ts_savepath = f'{self.parquet_pth}/timeseries.parquet'
-        self.outputevents_savepath = f'{self.parquet_pth}/timeseriesoutputs.parquet'
+        self.outputevents_pth = f'{self.savepath}outputevents.parquet'
+        self.admissions_pth = f'{self.savepath}admissions.parquet'
+        self.inputevents_pth = f'{self.savepath}inputevents.parquet'
+        self.icustays_pth = f'{self.savepath}icustays.parquet'
+        self.patients_pth = f'{self.savepath}patients.parquet'
+        self.ditems_pth = f'{self.savepath}d_items.parquet'
+        self.dlabitems_pth = f'{self.savepath}d_labitems.parquet'
+        self.tslab_savepath = f'{self.savepath}/timeserieslab.parquet'
+        self.ts_savepath = f'{self.savepath}/timeseries.parquet'
+        self.outputevents_savepath = f'{self.savepath}/timeseriesoutputs.parquet'
         self.col_los = 'los'
         self.unit_los = 'day'
 
@@ -58,7 +58,7 @@ class mimic4Preparator(DataPreparator):
             print(table)
             table_pth = Path(table)
             pth_csv = f'{self.source_pth}/{table_pth}'
-            pth_pqt = f'{self.parquet_pth}/{table_pth.name}'
+            pth_pqt = f'{self.savepath}/{table_pth.name}'
 
             self.save(pd.read_csv(f'{pth_csv}.csv.gz'), f'{pth_pqt}.parquet')
 
@@ -171,7 +171,7 @@ class mimic4Preparator(DataPreparator):
         icustays = pd.read_parquet(self.icustays_pth,
                                    columns=['stay_id', 'intime', 'los'])
 
-        self.mp = MedicationProcessor('mimic',
+        self.mp = MedicationProcessor('mimic4',
                                       icustays,
                                       col_pid='stay_id',
                                       col_los='los',

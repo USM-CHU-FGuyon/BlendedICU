@@ -41,13 +41,13 @@ class eicuPreparator(DataPreparator):
         
         suffix = f'_{self.n_patient_chunk}_patient_chunks/'
 
-        self.diag_savepath = f'{self.parquet_pth}/diagnoses.parquet'
-        self.lab_savepath = f'{self.parquet_pth}/tslab{suffix}'
-        self.resp_savepath = f'{self.parquet_pth}/tsresp{suffix}'
-        self.nurse_savepath = f'{self.parquet_pth}/tsnurse{suffix}'
-        self.periodic_savepath = f'{self.parquet_pth}/tsperiodic{suffix}'
-        self.aperiodic_savepath = f'{self.parquet_pth}/tsaperiodic{suffix}'
-        self.intakeoutput_savepath = f'{self.parquet_pth}/tsintakeoutput{suffix}'
+        self.diag_savepath = f'{self.savepath}/diagnoses.parquet'
+        self.lab_savepath = f'{self.savepath}/tslab{suffix}'
+        self.resp_savepath = f'{self.savepath}/tsresp{suffix}'
+        self.nurse_savepath = f'{self.savepath}/tsnurse{suffix}'
+        self.periodic_savepath = f'{self.savepath}/tsperiodic{suffix}'
+        self.aperiodic_savepath = f'{self.savepath}/tsaperiodic{suffix}'
+        self.intakeoutput_savepath = f'{self.savepath}/tsintakeoutput{suffix}'
 
         self.col_los = 'unitdischargeoffset'
         self.unit_los = 'minute'

@@ -4,6 +4,7 @@ This code extracts the data from the Amsterdam dataset
 
 It creates a set of .parquet files at the specified path 
 ('amsterdam' in paths.json). 
+Approximate running time: 30min.
 """
 from amsterdam_preprocessing.AmsterdamPreparator import AmsterdamPreparator
 

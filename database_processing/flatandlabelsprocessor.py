@@ -6,9 +6,8 @@ from database_processing.dataprocessor import DataProcessor
 
 
 class FlatAndLabelsProcessor(DataProcessor):
-    def __init__(self,
-                 dataset):
-        super().__init__(dataset)
+    def __init__(self, dataset,  **kwargs):
+        super().__init__(dataset, **kwargs)
         self.flat = None
         self.labels = None
         self.ts_patients = self.get_ts_patients()

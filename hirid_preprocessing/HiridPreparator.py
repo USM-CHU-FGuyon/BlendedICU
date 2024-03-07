@@ -26,8 +26,8 @@ class hiridPreparator(DataPreparator):
         
         self._check_files_untarred()
         
-        self.ts_savepth = self.parquet_pth+'/timeseries_1000_patient_chunks/'
-        self.pharma_savepth = self.parquet_pth+'/pharma_1000_patient_chunks/'
+        self.ts_savepth = self.savepath+'/timeseries_1000_patient_chunks/'
+        self.pharma_savepth = self.savepath+'/pharma_1000_patient_chunks/'
         self.id_mapping = self._variablenames_mapping()
 
         self.weights = None
@@ -245,7 +245,7 @@ class hiridPreparator(DataPreparator):
                                             left_on='admissionid',
                                             right_index=True))
         admissions['care_site'] = 'Bern University Hospital'
-        self.save(admissions, self.parquet_pth+'labels.parquet')
+        self.save(admissions, self.savepath+'labels.parquet')
 
     def gen_timeseries(self):
         """

@@ -12,8 +12,8 @@ class amsterdamTSP(TimeseriesPreprocessing):
     """
     def __init__(self, ts_chunks, listitems_pth, gcs_scores_pth):
         super().__init__(dataset='amsterdam')
-        self.ts_chunks = self.ls(self.parquet_pth+ts_chunks)
-        self.listitems = self.load(self.parquet_pth+listitems_pth)
+        self.ts_chunks = self.ls(self.savepath+ts_chunks)
+        self.listitems = self.load(self.savepath+listitems_pth)
         self.medication = self.load(self.med_savepath,
                                     columns=['admissionid',
                                              'label',
@@ -21,7 +21,7 @@ class amsterdamTSP(TimeseriesPreprocessing):
                                              'start',
                                              'end',
                                              'value'])
-        self.gcs_scores = self.load(self.parquet_pth+gcs_scores_pth)
+        self.gcs_scores = self.load(self.savepath+gcs_scores_pth)
         
         self.colnames_med = {
             'col_id': 'admissionid',

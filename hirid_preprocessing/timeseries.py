@@ -9,8 +9,8 @@ class hiridTSP(TimeseriesPreprocessing):
     """
     def __init__(self, ts_chunks, pharma_chunks):
         super().__init__(dataset='hirid')
-        self.ts_files = self.ls(self.parquet_pth+ts_chunks)
-        self.pharma_files = self.ls(self.parquet_pth+pharma_chunks)
+        self.ts_files = self.ls(self.savepath+ts_chunks)
+        self.pharma_files = self.ls(self.savepath+pharma_chunks)
 
         self.med_colnames = {'col_id': 'admissionid',
                              'col_var': 'label',

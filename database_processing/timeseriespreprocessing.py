@@ -32,7 +32,8 @@ class TimeseriesPreprocessing(DataProcessor):
                       'amsterdam': 'time',
                       'hirid': 'time',
                       'is_numeric':1,
-                      'agg_method': 'last'}, 
+                      'agg_method': 'last',
+                      'unit_concept_id': 8505}, 
              'hour':{'blended':'hour',
                      'eicu': 'hour',
                      'mimic4':'hour',
@@ -40,7 +41,8 @@ class TimeseriesPreprocessing(DataProcessor):
                      'amsterdam': 'hour',
                      'hirid': 'hour',
                      'is_numeric':1,
-                     'agg_method': 'last'}}
+                     'agg_method': 'last',
+                     'unit_concept_id': 8505}}
              | {med: {'blended':med,
                       'eicu': med,
                       'mimic4':med,
@@ -49,7 +51,8 @@ class TimeseriesPreprocessing(DataProcessor):
                       'hirid': med,
                       'is_numeric':1,
                       'agg_method':'last',
-                      'categories':'drug'}
+                      'categories':'drug',
+                      'unit_concept_id': 0}
                 for med in self.kept_med})
         self.med_time_hour = pd.DataFrame(d).T
         
@@ -574,9 +577,12 @@ class TimeseriesPreprocessing(DataProcessor):
         self._save_index(patient_pths, ts_savepath)
 
     def _save_index(self, patient_pths, ts_savepath):
+        index_savepath = ts_savepath+'/index.csv'
         (pd.Series(patient_pths, name='ts_pth')
          .rename_axis('patient')
-         .to_csv(ts_savepath+'/index.csv', sep=';'))
+         .to_csv(index_savepath, sep=';'))
+        print(f'  -> saved {index_savepath}')
+        
 
     def _kept_meds(self):
         """convenience function to get the list of included medications."""

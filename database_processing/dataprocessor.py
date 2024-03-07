@@ -12,19 +12,22 @@ import pandas as pd
 
 
 class DataProcessor:
-    def __init__(self, dataset):
+    def __init__(self,
+                 dataset,
+                 datasets=('eicu', 'mimic4', 'mimic3', 'hirid', 'amsterdam')):
+        self.datasets = datasets
         self.dataset = dataset
         self.SEED = 974
         self.n_patient_chunk = 1000
         self.pth_dic = self._read_json('paths.json')
         self.config = self._read_json('config.json')
-        self.blendedicu_pth = self.pth_dic["blended"]+'/'
+        self.data_pth = self.pth_dic['data_path']
+        self.blendedicu_pth = self.data_pth+'/blended_data/'
+        self.labels_pths = {d: self._labels_pth(d) for d in self.datasets}
+        self.savepath = self.data_pth + self._datadir_name()
         self.aux_pth = self.pth_dic['auxillary_files']
-        self.savepath = self.pth_dic[self.dataset]
         self.voc_pth = self.pth_dic['vocabulary']
         self.user_input_pth = self.pth_dic['user_input']
-        self.parquet_pth = f'{self.savepath}{self.dataset}_parquet/'
-        Path(self.parquet_pth).mkdir(exist_ok=True, parents=True)
         try:
             self.source_pth = self.pth_dic[f'{self.dataset}_source_path']
         except KeyError:
@@ -35,8 +38,6 @@ class DataProcessor:
         self.dischargeloc_file = self.user_input_pth+'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth+'admission_origins_v2.json'
 
-        self.datasets = ('eicu', 'mimic4', 'mimic3', 'hirid', 'amsterdam')
-        
         self.ohdsi_med = self._read_json(self.med_file)
         self.med_concept_id = self._med_concept_id_mapping()
 
@@ -70,10 +71,20 @@ class DataProcessor:
         self.med_mapping = self._load_med_mapping()
         self.clipping_quantiles = None
         self.labels = None
-        self.med_savepath = f'{self.parquet_pth}/medication.parquet'
-        self.labels_savepath = f'{self.parquet_pth}/labels.parquet'
-        self.flat_savepath = f'{self.parquet_pth}/flat_features.parquet'
+        self.med_savepath = f'{self.savepath}/medication.parquet'
+        self.labels_savepath = f'{self.savepath}/labels.parquet'
+        self.flat_savepath = f'{self.savepath}/flat_features.parquet'
 
+    def _labels_pth(self, dataset):
+        return (f'{self.data_pth}/'
+                +self._datadir_name(dataset)
+                +'preprocessed_labels.parquet')
+    
+    def _datadir_name(self, dataset=None):
+        if dataset is None:
+            dataset = self.dataset
+        return f'/{dataset}_data/'
+        
     def _mkdirs(self):
         for pth in (self.formatted_ts_dir,
                     self.formatted_med_dir,
@@ -255,9 +266,9 @@ class DataProcessor:
         """
         quantiles = df.quantile([0.05, 0.5, 0.95])
 
-        mins = quantiles.loc[0.05]
-        maxs = quantiles.loc[0.95]
-        meds = quantiles.loc[0.5]
+        mins = quantiles.loc[0.05].copy()
+        maxs = quantiles.loc[0.95].copy()
+        meds = quantiles.loc[0.5].copy()
 
         consant_values_idx = mins == maxs
 

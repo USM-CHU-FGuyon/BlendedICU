@@ -22,12 +22,12 @@ class eicuTSP(TimeseriesPreprocessing):
         self.medication = self.load(self.med_savepath)
 
         self.flat = self.load(self.flat_savepath)
-        self.tslab_files = self.ls(self.parquet_pth+lab_pth)
-        self.tsresp_files = self.ls(self.parquet_pth+resp_pth)
-        self.tsnurse_files = self.ls(self.parquet_pth+nurse_pth)
-        self.tsaperiodic_files = self.ls(self.parquet_pth+aperiodic_pth)
-        self.tsperiodic_files = self.ls(self.parquet_pth+periodic_pth)
-        self.tsinout_files = self.ls(self.parquet_pth+inout_pth)
+        self.tslab_files = self.ls(self.savepath+lab_pth)
+        self.tsresp_files = self.ls(self.savepath+resp_pth)
+        self.tsnurse_files = self.ls(self.savepath+nurse_pth)
+        self.tsaperiodic_files = self.ls(self.savepath+aperiodic_pth)
+        self.tsperiodic_files = self.ls(self.savepath+periodic_pth)
+        self.tsinout_files = self.ls(self.savepath+inout_pth)
 
         self.colnames_lab = {
             'col_id': 'patientunitstayid',

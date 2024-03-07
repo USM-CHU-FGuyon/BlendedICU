@@ -34,7 +34,7 @@ class blendedicuTSP(TimeseriesPreprocessing):
                    .join(index_df[['ts_pth']])
                    .dropna(subset='ts_pth')
                    .groupby('source_dataset')
-                   .sample(**kwargs))
+                   .sample(**kwargs, random_state=self.SEED))
         index_pth = self._get_index_pth(ts_dir)
         
         print(f'Saving {index_pth}')

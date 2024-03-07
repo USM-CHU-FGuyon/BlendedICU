@@ -20,9 +20,9 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
 
         flat['gender'] = (flat['gender'].pipe(pd.to_numeric, errors='coerce')
                                         .fillna(0.5))
-
+        
         flat = flat.pipe(self.medianfill, cols=['age']).astype({'age': float})
-
+        
         flat['origin'] = flat['unitadmitsource']
         flat['raw_age'] = flat['age']
         flat['raw_admissionheight'] = flat['admissionheight']
@@ -63,7 +63,6 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
         labels['raw_weight'] = flat['raw_admissionweight']
         labels['weight'] = flat['raw_admissionweight']
         labels['height'] = flat['raw_admissionweight']
-
         labels['origin'] = flat['origin']
 
         labels = (labels.pipe(self.clip_and_norm,

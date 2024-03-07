@@ -17,5 +17,3 @@ self = OMOP_converter(initialize_tables=True,
 self.measurement_table(start_chunk=0)
 
 self.drug_exposure_table(start_chunk=0)
-
-self.export_tables()

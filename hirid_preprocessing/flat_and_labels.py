@@ -7,7 +7,7 @@ from database_processing.flatandlabelsprocessor import FlatAndLabelsProcessor
 class Hir_FLProcessing(FlatAndLabelsProcessor):
     def __init__(self):
         super().__init__(dataset='hirid')
-        self.labels = self.load(f'{self.parquet_pth}/labels.parquet')
+        self.labels = self.load(f'{self.savepath}/labels.parquet')
 
     def preprocess_labels(self):
         labels = self.labels

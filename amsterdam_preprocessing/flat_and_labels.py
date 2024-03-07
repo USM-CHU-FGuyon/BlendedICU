@@ -42,7 +42,7 @@ class Ams_FLProcessor(FlatAndLabelsProcessor):
     def __init__(self):
         super().__init__(dataset='amsterdam')
 
-        self.labels = self.load(f'{self.parquet_pth}/labels.parquet')
+        self.labels = self.load(f'{self.savepath}/labels.parquet')
 
         self.gender_mapping = {'Man': 1,
                                'Vrouw': 0,

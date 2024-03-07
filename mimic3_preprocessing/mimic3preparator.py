@@ -11,18 +11,18 @@ class mimic3Preparator(DataPreparator):
                  chartevents_pth,):
         super().__init__(dataset='mimic3', col_stayid='ICUSTAY_ID')
         self.chartevents_pth = self.source_pth+chartevents_pth
-        self.labevents_pth = f'{self.parquet_pth}labevents.parquet'
-        self.outputevents_pth = f'{self.parquet_pth}outputevents.parquet'
-        self.admissions_pth = f'{self.parquet_pth}admissions.parquet'
-        self.inputevents_mv_pth = f'{self.parquet_pth}inputevents_mv.parquet'
-        self.inputevents_cv_pth = f'{self.parquet_pth}inputevents_cv.parquet'
-        self.icustays_pth = f'{self.parquet_pth}icustays.parquet'
-        self.patients_pth = f'{self.parquet_pth}patients.parquet'
-        self.ditems_pth = f'{self.parquet_pth}d_items.parquet'
-        self.dlabitems_pth = f'{self.parquet_pth}d_labitems.parquet'
-        self.tslab_savepath = f'{self.parquet_pth}/timeserieslab.parquet'
-        self.ts_savepath = f'{self.parquet_pth}/timeseries.parquet'
-        self.outputevents_savepath = f'{self.parquet_pth}/timeseriesoutputs.parquet'
+        self.labevents_pth = f'{self.savepath}labevents.parquet'
+        self.outputevents_pth = f'{self.savepath}outputevents.parquet'
+        self.admissions_pth = f'{self.savepath}admissions.parquet'
+        self.inputevents_mv_pth = f'{self.savepath}inputevents_mv.parquet'
+        self.inputevents_cv_pth = f'{self.savepath}inputevents_cv.parquet'
+        self.icustays_pth = f'{self.savepath}icustays.parquet'
+        self.patients_pth = f'{self.savepath}patients.parquet'
+        self.ditems_pth = f'{self.savepath}d_items.parquet'
+        self.dlabitems_pth = f'{self.savepath}d_labitems.parquet'
+        self.tslab_savepath = f'{self.savepath}/timeserieslab.parquet'
+        self.ts_savepath = f'{self.savepath}/timeseries.parquet'
+        self.outputevents_savepath = f'{self.savepath}/timeseriesoutputs.parquet'
         self.col_los = 'LOS'
         self.unit_los = 'day'
         
@@ -61,7 +61,7 @@ class mimic3Preparator(DataPreparator):
             print(table)
             table_pth = Path(table)
             pth_csv = f'{self.source_pth}/{table_pth}'
-            pth_pqt = f'{self.parquet_pth}/{table_pth.name}'
+            pth_pqt = f'{self.savepath}/{table_pth.name}'
             self.save(pd.read_csv(f'{pth_csv}.csv.gz'), f'{pth_pqt}.parquet')
 
     def _fetch_heights_weights(self):

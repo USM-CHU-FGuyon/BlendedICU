@@ -4,6 +4,7 @@ This code extracts the data from the MIMIC-IV dataset
 
 It creates a set of .parquet files at the specified path 
 ('mimic' in paths.json). 
+Approximate running time: 20min.
 """
 from mimic4_preprocessing.mimic4preparator import mimic4Preparator
 

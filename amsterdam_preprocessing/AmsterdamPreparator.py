@@ -16,9 +16,9 @@ class AmsterdamPreparator(DataPreparator):
         self.numericitems_pth = self.source_pth+numericitems_pth
         self.listitems_pth = self.source_pth+listitems_pth
 
-        self.ts_savepath = f'{self.parquet_pth}/numericitems_{self.n_patient_chunk}_patient_chunks/'
-        self.listitems_savepath = f'{self.parquet_pth}/listitems.parquet'
-        self.gcs_savepath = f'{self.parquet_pth}/glasgow_coma_scores.parquet'
+        self.ts_savepath = f'{self.savepath}/numericitems_{self.n_patient_chunk}_patient_chunks/'
+        self.listitems_savepath = f'{self.savepath}/listitems.parquet'
+        self.gcs_savepath = f'{self.savepath}/glasgow_coma_scores.parquet'
         self.col_los = 'lengthofstay'
         self.unit_los = 'hour'
 

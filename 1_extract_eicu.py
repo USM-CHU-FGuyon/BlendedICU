@@ -4,6 +4,7 @@ This code extracts the data from the Amsterdam dataset
 
 It creates a set of .parquet files at the specified path 
 ('eicu' in paths.json). 
+Approximate running time: 20min.
 """
 from eicu_preprocessing.eicupreparator import eicuPreparator
 

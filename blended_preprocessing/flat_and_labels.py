@@ -13,7 +13,7 @@ def _take_sample(df, size, groupcol='source_dataset'):
 
 class blended_FLProcessor(FlatAndLabelsProcessor):
     def __init__(self, datasets, size=None):
-        super().__init__(dataset='blended')
+        super().__init__(dataset='blended', datasets=datasets)
         self.size = size
         self.datasets = datasets
         self.labels = self._load_labels()
@@ -22,9 +22,7 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
         """
         Loads the label.parquet file from each source database.
         """
-        labels_pths = {d: f'{self.pth_dic[d]}/preprocessed_labels.parquet'
-                       for d in self.datasets}
-        return {d: self.load(p).reset_index() for d, p in labels_pths.items()}
+        return {d: self.load(p).reset_index() for d, p in self.labels_pths.items()}
 
     def _fill_flat(self, df, **kwargs):
         """

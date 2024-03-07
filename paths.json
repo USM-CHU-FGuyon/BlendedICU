@@ -1,16 +1,12 @@
 {
+  "data_path": "D:/BLENDED_ICU/",
   "eicu_source_path":"Y:/eICU/",
-  "eicu": "D:/BLENDED_ICU/eicu_data/",
-  "mimic_source_path": "Y:/mimic/IV/",
-  "mimic": "D:/BLENDED_ICU/mimic_data/",
+  "mimic4_source_path": "Y:/mimic/mimic-iv-2.2/",
+  "mimic3_source_path": "Y:/mimic/III/",
   "amsterdam_source_path": "Y:/UMC/",
-  "amsterdam": "D:/BLENDED_ICU/amsterdam_data/",
   "hirid_source_path": "Y:/hirid/",
-  "hirid": "D:/BLENDED_ICU/hirid_data/",
-  "blended": "D:/BLENDED_ICU/blended_data/",
-  "results": "D:/BLENDED_ICU/results/",
   "auxillary_files": "Z:/BlendedICU/auxillary_files/",
   "vocabulary" : "Z:/BlendedICU/auxillary_files/OMOP_vocabulary/",
-  "user_input" : "Z:/BlendedICU/auxillary_files/user_input/",
-  "medication_mapping_files": "Z:/BlendedICU/auxillary_files/medication_mapping_files/"
+  "user_input" : "Z:BlendedICU/auxillary_files/user_input/",
+  "medication_mapping_files": "Z:BlendedICU/auxillary_files/medication_mapping_files/"
 }

@@ -16,11 +16,11 @@ class mimic3TSP(TimeseriesPreprocessing):
                  outputevents_pth):
         super().__init__(dataset='mimic3')
 
-        self.medication = self.load(self.parquet_pth+med_pth)
+        self.medication = self.load(self.savepath+med_pth)
 
-        self.timeseries = self.load(self.parquet_pth+ts_pth)
-        self.timeseries_lab = self.load(self.parquet_pth+tslab_pth)
-        self.outputevents = self.load(self.parquet_pth+outputevents_pth,
+        self.timeseries = self.load(self.savepath+ts_pth)
+        self.timeseries_lab = self.load(self.savepath+tslab_pth)
+        self.outputevents = self.load(self.savepath+outputevents_pth,
                                       columns=['ICUSTAY_ID',
                                                'offset',
                                                'VALUE',
