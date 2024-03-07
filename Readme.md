@@ -1,4 +1,4 @@
-![image](https://github.com/USM-CHU-FGuyon/BlendedICU/assets/104059079/c8c0a454-6cc1-4ea5-abee-06092c2739be)Welcome to the BlendedICU code repository
+Welcome to the BlendedICU code repository
 ===
 This is the repository from [Introducing the BlendedICU dataset, the first harmonized, international intensive care dataset](https://www.sciencedirect.com/science/article/abs/pii/S153204642300223X)
 
