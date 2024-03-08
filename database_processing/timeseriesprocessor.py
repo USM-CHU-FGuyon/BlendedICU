@@ -14,7 +14,7 @@ from natsort import natsorted
 from database_processing.dataprocessor import DataProcessor
 
 
-class TimeseriesPreprocessing(DataProcessor):
+class TimeseriesProcessor(DataProcessor):
     def __init__(self, dataset):
         super().__init__(dataset)
         self.ts_variables_pth = self.user_input_pth+'timeseries_variables.csv'

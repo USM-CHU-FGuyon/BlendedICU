@@ -3,10 +3,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
+from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
-class blendedicuTSP(TimeseriesPreprocessing):
+class blendedicuTSP(TimeseriesProcessor):
     def __init__(self, compute_index=False):
         '''
         Use compute_index=True if timeseries files may have changed location,

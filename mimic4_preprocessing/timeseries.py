@@ -1,9 +1,9 @@
 import pandas as pd
 
-from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
+from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
-class mimic4TSP(TimeseriesPreprocessing):
+class mimic4TSP(TimeseriesProcessor):
     """
     Our processing of the hirid database handles 
     * 3 long tables: timeseries, timeserieslab, outputevents

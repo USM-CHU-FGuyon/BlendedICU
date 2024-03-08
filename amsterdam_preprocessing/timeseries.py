@@ -1,9 +1,9 @@
 import pandas as pd
 
-from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
+from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
-class amsterdamTSP(TimeseriesPreprocessing):
+class amsterdamTSP(TimeseriesProcessor):
     """
     Our processing of the amsterdam database handles 
     * 2 long tables: numericitems and listitems

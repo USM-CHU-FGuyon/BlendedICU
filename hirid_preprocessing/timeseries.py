@@ -1,7 +1,7 @@
-from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
+from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
-class hiridTSP(TimeseriesPreprocessing):
+class hiridTSP(TimeseriesProcessor):
     """
     Our processing of the hirid database handles 
     * 2 long tables: timeseries and pharma

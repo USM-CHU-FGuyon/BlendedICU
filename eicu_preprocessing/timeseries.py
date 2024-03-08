@@ -1,9 +1,9 @@
 import pandas as pd
 
-from database_processing.timeseriespreprocessing import TimeseriesPreprocessing
+from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
-class eicuTSP(TimeseriesPreprocessing):
+class eicuTSP(TimeseriesProcessor):
     """
     Our processing of the eicu database handles 
     * 4 long tables: lab, resp, nurse, inputoutput
