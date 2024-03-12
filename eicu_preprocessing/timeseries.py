@@ -74,9 +74,9 @@ class eicuTSP(TimeseriesProcessor):
                                     .apply(lambda x: f'{self.dataset}-{x}'))
         return self.flat.loc[:, ['patient', 'hour']].set_index('patient')
 
-    def run(self):
+    def run(self, reset_dir=None):
 
-        self.reset_dir()
+        self.reset_dir(reset_dir)
 
         self.medication = self.filter_tables(self.medication,
                                              kept_variables=self.kept_med,

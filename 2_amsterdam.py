@@ -13,7 +13,7 @@ tsp = amsterdamTSP(
     listitems_pth='listitems.parquet',
     gcs_scores_pth='glasgow_coma_scores.parquet')
 
-tsp.run()
+tsp.run(reset_dir=False)
 
 flp = Ams_FLProcessor()
 

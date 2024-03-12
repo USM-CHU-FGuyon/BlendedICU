@@ -16,7 +16,7 @@ tsp = eicuTSP(
     periodic_pth='tsaperiodic_1000_patient_chunks/',
     inout_pth='tsintakeoutput_1000_patient_chunks/')
 
-tsp.run()
+tsp.run(reset_dir=False)
 
 flp = eicu_FLProcessor()
 

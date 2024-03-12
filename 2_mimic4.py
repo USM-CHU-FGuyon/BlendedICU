@@ -14,7 +14,7 @@ tsp = mimic4TSP(
     tslab_pth='timeserieslab.parquet',
     outputevents_pth='timeseriesoutputs.parquet')
 
-tsp.run()
+tsp.run(reset_dir=False)
 
 flp = mimic4_FLProcessor()
 

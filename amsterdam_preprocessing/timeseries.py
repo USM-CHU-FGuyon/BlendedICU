@@ -47,8 +47,9 @@ class amsterdamTSP(TimeseriesProcessor):
     def _get_chunk(self, table, chunk_idx):
         return table.loc[table.admissionid.isin(chunk_idx)]
     
-    def run(self):
-        self.reset_dir()
+    def run(self, reset_dir=None):
+        self.reset_dir(reset_dir)
+        
         for chunk_number, data_pth in enumerate(self.ts_chunks):
             numericitems_chunk = self.load(data_pth, columns=self.tscols)
 

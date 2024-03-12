@@ -19,4 +19,4 @@ flp.run_flat_and_labels()
 
 tsp = blendedicuTSP(compute_index=False)
 
-tsp.run()
+tsp.run(reset_dir=False)

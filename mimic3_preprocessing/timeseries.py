@@ -54,8 +54,9 @@ class mimic3TSP(TimeseriesProcessor):
             'col_time': 'offset'
         }
 
-    def run(self):
-
+    def run(self, reset_dir=None):
+        self.reset_dir(reset_dir)
+        
         self.outputevents = self.filter_tables(self.outputevents,
                                                kept_variables=self.kept_ts,
                                                **self.colnames_outputevents)

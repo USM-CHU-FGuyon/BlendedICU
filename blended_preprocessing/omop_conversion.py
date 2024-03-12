@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import hashlib
 import pandas as pd
 import numpy as np
-import pyarrow as pa
 
 from blended_preprocessing.timeseries import blendedicuTSP
 from omop_cdm import cdm
@@ -77,9 +76,8 @@ class OMOP_converter(blendedicuTSP):
         self.concept, self.concept_table = self._concept_table()
         
         self.units = self._get_units()
-        self.measurement_schema = cdm.schemas['measurement']
-        self.observation_schema = cdm.schemas['observation']
-        self.drug_exposure_schema = cdm.schemas['drug_exposure']
+        
+        self.schemas = cdm.schemas
         
         if initialize_tables:
             self._initialize_tables()
@@ -186,7 +184,7 @@ class OMOP_converter(blendedicuTSP):
         
     def _id_mapper(self, hashed_series, prefix):
         return pd.Series(hashed_series.apply(self._hash_values, prefix=prefix).values,
-                         index=hashed_series)
+                         index=hashed_series).astype(np.int64)
     
     def person_table(self):
         print('Person table...')
@@ -203,7 +201,7 @@ class OMOP_converter(blendedicuTSP):
                                                                    minute=0,
                                                                    second=0)))
         person['person_source_value'] = person_labels.uniquepid
-        person['gender_source_value'] = person_labels.sex
+        person['gender_source_value'] = person_labels.sex.astype(str)
         person['location_id'] = (person_labels.source_dataset.map(
                                                         {'amsterdam': 'NL',
                                                          'hirid': 'CH',
@@ -236,7 +234,7 @@ class OMOP_converter(blendedicuTSP):
         visit_occurrence['admitted_from_source_value'] = self.labels.origin
         visit_end_datetime = self.ref_date + self.labels.lengthofstay.apply(timedelta)
         visit_occurrence['visit_end_date'] = visit_end_datetime.dt.date
-        visit_occurrence['visit_end_datetime'] = visit_end_datetime
+        visit_occurrence['visit_end_datetime'] = visit_end_datetime.dt.round('s')
         visit_occurrence['person_id'] = visit_occurrence['_source_person_id'].map(self.person_id_mapper)
         visit_occurrence['discharged_to_source_value'] = self.labels.discharge_location
         visit_occurrence['discharged_to_concept_id'] = self.labels.discharge_location.map(self.concept_mapping)
@@ -265,7 +263,7 @@ class OMOP_converter(blendedicuTSP):
         death_datetimes = self.ref_date + self.death_labels.lengthofstay.apply(timedelta)
 
         self.death['death_date'] = death_datetimes.dt.date
-        self.death['death_datetime'] = death_datetimes
+        self.death['death_datetime'] = death_datetimes.dt.round('s')
         self.death = (self.death
                       .reset_index(drop=True)
                       .drop_duplicates(subset='person_id'))
@@ -307,7 +305,7 @@ class OMOP_converter(blendedicuTSP):
 
         vals['visit_occurrence_id'] = vals['visit_occurrence_id']
         vals['measurement_concept_id'] = self.concept_mapping[varname]
-        vals['measurement_source_value'] = vals['value_as_number']
+        vals['measurement_source_value'] = vals['value_as_number'].astype(str)
         vals['unit_source_value'] = unit['concept_code']
         vals['unit_concept_id'] = unit.name
         vals = vals.drop(columns=['patient'])
@@ -344,13 +342,9 @@ class OMOP_converter(blendedicuTSP):
             self.measurement['measurement_id'] = (np.arange(len(self.measurement)) + start_index).astype('float32')
             start_index = start_index + self.start_index['measurement']
 
-            self.measurement['visit_start_date'] = pd.to_datetime(self.measurement['visit_start_date'])
             self.measurement['measurement_date'] = pd.to_datetime(self.measurement['measurement_date'])
-            self.measurement['value_source_value'] = self.measurement['value_as_number']
-            self.export_table(self.measurement,
-                              'MEASUREMENT',
-                              chunkindex=i,
-                              schema=self.measurement_schema)
+            self.measurement['value_source_value'] = self.measurement['value_as_number'].astype(str)
+            self.export_table(self.measurement, 'MEASUREMENT', chunkindex=i)
 
 
     def _add_observation(self, breaks, column, concept_id, unit_concept_id):
@@ -443,26 +437,29 @@ class OMOP_converter(blendedicuTSP):
             self.drug_exposure['drug_exposure_end_date'] = pd.to_datetime(self.drug_exposure['drug_exposure_end_date'])
             self.drug_exposure['person_id'] = self.drug_exposure.visit_occurrence_id.map(self.visit_occurrence.person_id)
             
-            self.export_table(self.drug_exposure,
-                              'DRUG_EXPOSURE',
-                              chunkindex=i,
-                              schema=self.drug_exposure_schema)
+            self.export_table(self.drug_exposure, 'DRUG_EXPOSURE', chunkindex=i)
 
     def care_site_table(self):
         print('Care_site table...')
-        self.care_site = cdm.tables['CARE_SITE']
-        self.labels['unit_type'] = self.labels['unit_type'].map(self.unit_types)
-        self.care_site[['care_site_name', 'place_of_service_source_value']] = self.labels[['care_site', 'unit_type']].drop_duplicates()
-        self.care_site['place_of_service_concept_id'] = self.care_site['place_of_service_source_value']
-        self.care_site['care_site_source_value'] = self.care_site['care_site_name']
+        care_site = cdm.tables['CARE_SITE']
+        self.labels['unit_type'] = self.labels['unit_type'].replace(self.unit_types)
+        
+        care_sites = (self.labels[['care_site', 'unit_type']]
+                      .drop_duplicates()
+                      .reset_index(drop=True))
+        
+        care_site[['care_site_name', 'place_of_service_source_value']] = care_sites
+        care_site['care_site_source_value'] = care_site['care_site_name']
 
         self.locationid_mapper = (self.location[['location_source_value',
                                                  'location_id']]
                                   .set_index('location_source_value')
                                   .to_dict()['location_id'])
 
-        self.care_site['location_id'] = self.care_site['care_site_name'].map(self.locationid_mapper).astype(int)
-        self.care_site['care_site_id'] = self.start_index['care_site'] + np.arange(len(self.care_site))
+        care_site['location_id'] = care_site['care_site_name'].map(self.locationid_mapper).astype(int)
+        care_site['care_site_id'] = self.start_index['care_site'] + np.arange(len(care_site))
+        
+        self.care_site = care_site
 
     def domain_table(self):
         print('Domain table...')
@@ -481,7 +478,7 @@ class OMOP_converter(blendedicuTSP):
         self.domain['domain_concept_id'] = self.domain['domain_name'].map(domains)
 
         start_index = self.start_index['domain']
-        self.domain['domain_id'] = np.arange(start_index, start_index+len(self.domain))
+        self.domain['domain_id'] = np.arange(start_index, start_index+len(self.domain)).astype(str)
 
     def _concept_table(self):
         print('Concept_table...')
@@ -530,7 +527,7 @@ class OMOP_converter(blendedicuTSP):
                        + concept_ids_units)
 
         concept_data = self.omop_concept.loc[np.unique(concept_ids)].reset_index()
-
+        
         concept = pd.concat([concept, concept_data]).set_index('concept_id', drop=False)
 
         concept_mapper = concept.set_index('concept_name')['concept_id']
@@ -636,40 +633,33 @@ class OMOP_converter(blendedicuTSP):
         self._visits_exist(table, name)
         
 
-    def export_table(self,
-                     table,
-                     name,
-                     chunkindex=None,
-                     schema=None):
+    def export_table(self, table, name, chunkindex=None):
         """
-        Exports a table
-        * to csv file if no schema is provided
-        * to parquet if a schema is provided. If a chunkindex is specified, 
-        the file is saved in a directory that will contain other parquet files,
+        Exports a table to parquet.
+        If a chunkindex is specified, the file is saved in a directory that
+            will contain other parquet files,
         else it is saved as a single parquet file.
         """
         table = table.reset_index(drop=True)
         self._sanity_checks(table, name)
-        if schema is None :
-            savepath = f'{self.savedir}/{name}.csv'
-            print(f'Saving {savepath}')
-            table.to_csv(savepath, sep=';', index=False)
+
+        schema = self.schemas[name.lower()]
+
+        if chunkindex is None:
+            savepath = f'{self.savedir}/{name}.parquet'
         else:
-            if chunkindex is None:
-                savepath = f'{self.savedir}/{name}.parquet'
-            else:
-                savepath = f'{self.savedir}/{name}/{name}_{chunkindex}.parquet'
-                Path(savepath).parent.mkdir(exist_ok=True, parents=True)
-            print(f'Saving {savepath}')
-            table.to_parquet(savepath, schema=schema)
+            savepath = f'{self.savedir}/{name}/{name}_{chunkindex}.parquet'
+            Path(savepath).parent.mkdir(exist_ok=True, parents=True)
+        print(f'Saving {savepath}')
+        table.to_parquet(savepath, schema=schema)
 
     def _create_empty_tables(self):
-        '''Creates empty csv tables, except for observation, measruement
-        and drug_exposure which will be saved as parquet.'''
+        '''Creates empty parquet tables, except for measurement
+        and drug_exposure which will be saved as multiple parquet.'''
+        print('Initializing empty tables...')
         for name, table in cdm.tables.items():
             if name.lower() not in ['measurement',
-                                    'drug_exposure',
-                                    'observation']:
+                                    'drug_exposure']:
                 self.export_table(table, name)
 
     def export_flat_tables(self):
@@ -686,6 +676,4 @@ class OMOP_converter(blendedicuTSP):
         self.export_table(self.visit_occurrence, 'VISIT_OCCURRENCE')
         self.export_table(self.domain, 'DOMAIN')
         self.export_table(self.location, 'LOCATION')
-        self.export_table(self.observation,
-                          'OBSERVATION',
-                          schema=self.observation_schema)
+        self.export_table(self.observation, 'OBSERVATION')

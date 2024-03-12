@@ -165,6 +165,44 @@ class TimeseriesProcessor(DataProcessor):
 
         return table.loc[table['variable'].isin(kept_variables)]
 
+    @staticmethod
+    def _set_patient_time_index(ts, cols_index):
+        """
+        'time' colum is a number of seconds. This function rounds the 'time'
+        column to an int buts keeps a float dtype. This avoids unnecessary
+        precision on certain measurements (especially for HiRID).
+        Then sets patient and time columns as index.
+        """
+        ts['time'] = ts['time'].round()
+        ts = ts.set_index(cols_index)
+        return ts
+        
+    def _get_variables_from_long_format(self, ts_ver):
+        """
+        Returns the list of variables that are found in ts_ver AND in 
+        the included timeseries variables listed in self.cols.
+        """
+        ver_variables = (ts_ver['variable']
+                         .drop_duplicates()
+                         .reset_index(drop=True))
+        ver_variables = ver_variables.loc[ver_variables.isin(self.cols[self.dataset])]
+        return ver_variables
+    
+    @staticmethod
+    def _get_unique_patients(ts_ver, ts_hor, med):
+        """
+        Returns all patients that are found in either long format or wide
+        format timeseries or medication data.
+        """
+        ver_patients = ts_ver.index.get_level_values(0)
+        hor_patients = ts_hor.index.get_level_values(0)
+        med_patients = med.patient
+        unique_patients = (ver_patients.union(hor_patients)
+                                       .union(med_patients)
+                                       .drop_duplicates()
+                                       .sort_values())
+        return unique_patients
+        
     def format_raw_data(self,
                         ts_ver=None,
                         ts_hor=None,
@@ -188,8 +226,6 @@ class TimeseriesProcessor(DataProcessor):
         The medication DataFrame is already properly formatted. A parquet file
         per patient is saved into the formatted_medications directory.
         """
-        ts_ver = self._numericize_cols(ts_ver)
-
         cols_index = [self.idx_col, self.time_col]
 
         if ts_hor is None:
@@ -197,27 +233,21 @@ class TimeseriesProcessor(DataProcessor):
         if ts_ver is None:
             ts_ver = pd.DataFrame(columns=cols_index+['variable', 'value'])
 
-        ver_variables = ts_ver['variable'].drop_duplicates()
-        ver_variables = ver_variables.loc[ver_variables.isin(self.cols[self.dataset])]
+        ts_ver = (ts_ver.pipe(self._numericize_cols)
+                  .pipe(self._set_patient_time_index, cols_index=cols_index))
+        
+        ts_hor = self._set_patient_time_index(ts_hor, cols_index)
 
-        ts_ver = ts_ver.set_index(cols_index)
-        ts_hor = ts_hor.set_index(cols_index)
+        ver_variables = self._get_variables_from_long_format(ts_ver)
 
-        ver_patients = ts_ver.index.get_level_values(0)
-        hor_patients = ts_hor.index.get_level_values(0)
-        med_patients = med.patient
-
-        unique_patients = (ver_patients.union(hor_patients)
-                                       .union(med_patients)
-                                       .drop_duplicates()
-                                       .sort_values())
+        unique_patients = self._get_unique_patients(ts_ver, ts_hor, med)
 
         ts_ver, ts_hor = self._add_missing_patients(ts_ver,
                                                     ts_hor,
                                                     unique_patients,
                                                     cols_index)
 
-        ts_hor = ts_hor.groupby(level=[0, 1]).mean()
+        ts_hor = ts_hor.groupby(level=('patient', 'time')).mean()
 
         ts_ver = self._extract_variables(ts_ver, ver_variables)
 
@@ -337,6 +367,8 @@ class TimeseriesProcessor(DataProcessor):
 
     def _celsius_to_farenheit(self, series):
         return (series-32)/1.8
+
+    #TODO : use a proper unit converter.
 
     def _harmonize_amsterdam(self, df):
         df['O2_arterial_saturation'] = df['O2_arterial_saturation']*100
@@ -636,8 +668,8 @@ class TimeseriesProcessor(DataProcessor):
         for var in kept_variables:
             self.var = var
             
-            df = (ts_ver.loc[ts_ver['variable'] == var, 'value']
-                  .groupby(level=[0, 1])
+            df = (ts_ver.loc[ts_ver['variable']==var, 'value']
+                  .groupby(level=(0, 1))
                   .agg(self.aggregates.loc[var])
                   .rename(var))
             series.append(df)

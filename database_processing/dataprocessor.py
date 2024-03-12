@@ -153,7 +153,11 @@ class DataProcessor:
         if verbose:
             print(f'Loading {pth}')
         else:
-            print('Loading timeseries...')
+            try:
+                n = len(pth)
+            except:
+                n = ''
+            print(f'Loading {n} timeseries...')
         return pd.read_parquet(pth, **kwargs)
 
     def save(self, df, savepath, pyarrow_schema=None, verbose=True):
@@ -193,7 +197,7 @@ class DataProcessor:
             random.shuffle(_rglob_list)
         return _rglob_list
 
-    def reset_dir(self):
+    def reset_dir(self, reset_dir=None):
         if self.dataset =='blended':
             del_dir = Path(self.preprocessed_ts_dir)
             del_dir_as_string = f'{del_dir}/*'
@@ -202,15 +206,18 @@ class DataProcessor:
             del_dir = Path(self.partiallyprocessed_ts_dir)
             del_dir_as_string = f'{del_dir}/{self.dataset}_*'
             del_dir_iter = del_dir.glob(f'{self.dataset}_*')
-        proceed = input(f'Delete contents of \n{del_dir_as_string} ? [n], y')
-        if proceed == 'y':
+        if reset_dir is None:
+            proceed = input(f'Delete contents of \n{del_dir_as_string} ? [n], y') == 'y'
+        else:
+            proceed = reset_dir
+        if proceed:
             for pth in del_dir_iter:
                 print(f'   -> Removing {pth}')
                 try:
                     self.rmdir(pth)
                 except NotADirectoryError:
                     os.remove(pth)
-        print(' Done\n\n')
+            print(' Done\n\n')
 
     def _load_mapping(self, pth):
         """

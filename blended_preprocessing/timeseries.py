@@ -66,14 +66,14 @@ class blendedicuTSP(TimeseriesProcessor):
         pths = self._shuffled_ts_pths()
         return map(list, np.array_split(pths, 1+len(pths)/1000))
 
-    def run(self):
+    def run(self, reset_dir=None):
         """
         Applies the processing pipeline to the 'partially_processed_timeseries'
         files. These files are already resampled 
         """
         scalecols = [c for c in self.numeric_ts if c not in ['time', 'hour']]
 
-        self.reset_dir()
+        self.reset_dir(reset_dir)
 
         self.pth_chunks = self._make_pth_chunks()
 

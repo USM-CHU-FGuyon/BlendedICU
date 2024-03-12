@@ -24,9 +24,9 @@ class hiridTSP(TimeseriesProcessor):
 
         self.loadcols = self.ts_colnames.values()
 
-    def run(self):
+    def run(self, reset_dir=None):
 
-        self.reset_dir()
+        self.reset_dir(reset_dir)
 
         kept_variables = (self.kept_ts+['Body weight', 'Body height measure'])
 

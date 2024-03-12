@@ -12,7 +12,7 @@ tsp = hiridTSP(
     ts_chunks='timeseries_1000_patient_chunks/',
     pharma_chunks='pharma_1000_patient_chunks/')
 
-tsp.run()
+tsp.run(reset_dir=False)
 
 flp = Hir_FLProcessing()
 

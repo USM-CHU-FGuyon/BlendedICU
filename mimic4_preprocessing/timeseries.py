@@ -53,8 +53,8 @@ class mimic4TSP(TimeseriesProcessor):
             'col_time': 'offset'
         }
 
-    def run(self):
-        self.reset_dir()
+    def run(self, reset_dir=None):
+        self.reset_dir(reset_dir)
         
         self.outputevents = self.filter_tables(self.outputevents,
                                                kept_variables=self.kept_ts,
