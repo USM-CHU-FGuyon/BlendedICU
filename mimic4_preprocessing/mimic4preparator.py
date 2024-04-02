@@ -14,6 +14,7 @@ class mimic4Preparator(DataPreparator):
         super().__init__(dataset='mimic4', col_stayid='stay_id')
         self.chartevents_pth = self.source_pth+chartevents_pth
         self.labevents_pth = self.source_pth+labevents_pth
+        self.diagnoses_pth = f'{self.savepath}diagnoses_icd.parquet'
         self.outputevents_pth = f'{self.savepath}outputevents.parquet'
         self.admissions_pth = f'{self.savepath}admissions.parquet'
         self.inputevents_pth = f'{self.savepath}inputevents.parquet'
@@ -21,6 +22,7 @@ class mimic4Preparator(DataPreparator):
         self.patients_pth = f'{self.savepath}patients.parquet'
         self.ditems_pth = f'{self.savepath}d_items.parquet'
         self.dlabitems_pth = f'{self.savepath}d_labitems.parquet'
+        self.ddiagnoses_pth = f'{self.savepath}d_icd_diagnoses.parquet'
         self.tslab_savepath = f'{self.savepath}/timeserieslab.parquet'
         self.ts_savepath = f'{self.savepath}/timeseries.parquet'
         self.outputevents_savepath = f'{self.savepath}/timeseriesoutputs.parquet'
@@ -47,6 +49,8 @@ class mimic4Preparator(DataPreparator):
         tables = [
             'hosp/d_labitems',
             'hosp/admissions',
+            'hosp/diagnoses_icd',
+            'hosp/d_icd_diagnoses',
             'icu/d_items',
             'icu/inputevents',
             'icu/outputevents',
@@ -163,6 +167,19 @@ class mimic4Preparator(DataPreparator):
                 .drop(columns=['hadm_id', 'itemid'])
                 .rename(columns={'starttime': 'time'}))
 
+    def gen_diagnoses(self):
+        diagnoses = self.load(self.diagnoses_pth, columns=['subject_id',
+                                                           'hadm_id',
+                                                           'icd_code',
+                                                           'icd_version'])
+        d_diagnoses = self.load(self.ddiagnoses_pth, columns=['icd_code',
+                                                              'icd_version',
+                                                              'long_title'])
+        
+        df_diagnoses = diagnoses.merge(d_diagnoses, on=['icd_code', 'icd_version'])
+        self.save(df_diagnoses, self.diag_savepath)
+        
+        
     def gen_medication(self):
         """
         Medication can be found in the inputevents table.

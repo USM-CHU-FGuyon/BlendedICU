@@ -25,6 +25,7 @@ class OMOP_converter(blendedicuTSP):
         self.n_chunks = 100
         
         self.labels = self._load_labels()
+        self.diagnoses = self._load_diagnoses()
         self.ts_pths = self._get_ts_pths(ts_pths,
                                          self.formatted_ts_dir,
                                          recompute_index)
@@ -116,6 +117,7 @@ class OMOP_converter(blendedicuTSP):
         self.death_table()
         self.domain_table()
         self.observation_table()
+        self.condition_occurrence_table()
         print('   -> Done')
         self.export_flat_tables()
         self.tables_initialized = True
@@ -133,6 +135,29 @@ class OMOP_converter(blendedicuTSP):
     def _get_chunks(self, pth_list):
         return map(list, np.array_split(pth_list, self.n_chunks))
         
+    def condition_occurrence_table(self):
+        
+        condition_occurrence = cdm.tables['CONDITION_OCCURRENCE']
+        
+        self.condition_occurrence = condition_occurrence.assign(
+            person_id=self.diagnoses.uniquepid.map(self.person_id_mapper),
+            visit_occurrence_id=self.diagnoses.patient.map(self.visit_mapper),
+            condition_concept_id=self.diagnoses.diagnosis_concept_id,
+            condition_start_date=self.diagnoses.diagnosis_start.dt.date,
+            condition_start_datetime=self.diagnoses.diagnosis_start,
+            condition_type_concept_id=32817,#EHR concept type
+            condition_source_value=self.diagnoses.diagnosis_source_value
+            )
+        
+        unique_id_cols = ['person_id',
+                          'condition_source_value',
+                          'condition_start_datetime']
+        
+        self.condition_occurrence['condition_occurrence_id'] = self._create_id(self.condition_occurrence,
+                                                                               unique_id_cols,
+                                                                               prefix=5)
+
+    
     def source_to_concept_map_table(self):
         ts_mapping = self.cols.concept_id.dropna().astype(int)
         visit_mapping = pd.Series(self.visit_concept_ids)
@@ -173,6 +198,12 @@ class OMOP_converter(blendedicuTSP):
         df = self.load(self.med_pths, verbose=False)
         print('   -> done')
         return df.reset_index()
+
+    def _create_id(self, df, unique_key, prefix):
+        return (df[unique_key]
+                .astype(str).sum(axis=1)
+                .apply(self._hash_values, prefix=prefix)
+                .astype(np.int64))
 
     def _hash_values(self, series, prefix):
         '''
@@ -605,6 +636,10 @@ class OMOP_converter(blendedicuTSP):
         labels_pth = self.data_pth+'preprocessed_labels.parquet'
         df = pd.read_parquet(labels_pth).reset_index()
         return df
+    
+    def _load_diagnoses(self):
+        df = pd.read_parquet(self.diag_savepath).reset_index()
+        return df
 
     def _visits_exist(self, table, name):
         '''
@@ -612,7 +647,7 @@ class OMOP_converter(blendedicuTSP):
         every visit_occurrence_id entry is in the VISIT_OCCURRENCE table.
         '''
         col = 'visit_occurrence_id'
-        if col in table.columns:
+        if cdm.field_required(col, table):
             table_visits = table[col].drop_duplicates()
             found = table_visits.isin(self.visit_occurrence_ids)
             if not found.all():
@@ -677,3 +712,4 @@ class OMOP_converter(blendedicuTSP):
         self.export_table(self.domain, 'DOMAIN')
         self.export_table(self.location, 'LOCATION')
         self.export_table(self.observation, 'OBSERVATION')
+        self.export_table(self.condition_occurrence, 'CONDITION_OCCURRENCE')

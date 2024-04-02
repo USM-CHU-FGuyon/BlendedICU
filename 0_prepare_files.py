@@ -14,8 +14,9 @@ source database.
 '''
 import json
 
-from med_to_omop.omop_medications import OMOP_Medications
-from med_to_omop.medication_mapping import MedicationMapping
+from omopize.omop_medications import OMOP_Medications
+from omopize.medication_mapping import MedicationMapping
+from omopize.omop_diagnoses import DiagnosesMapping
 from omop_cdm import omop_parquet 
 
 pth_dic = json.load(open('paths.json', 'r'))
@@ -34,3 +35,5 @@ mm = MedicationMapping(pth_dic,
                                  'eicu'])
 
 medication_json = mm.run(load_drugnames=False, fname='medications.json')
+
+dm = DiagnosesMapping(pth_dic, datasets=['mimic4'])

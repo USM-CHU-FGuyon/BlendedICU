@@ -23,7 +23,8 @@ class DataProcessor:
         self.config = self._read_json('config.json')
         self.data_pth = self.pth_dic['data_path']
         self.blendedicu_pth = self.data_pth+'/blended_data/'
-        self.labels_pths = {d: self._labels_pth(d) for d in self.datasets}
+        self.labels_pths = {d: self._preprocessed_pth(d, 'labels') for d in self.datasets}
+        self.diagnoses_pths = {d: self._preprocessed_pth(d, 'diagnoses') for d in self.datasets}
         self.savepath = self.data_pth + self._datadir_name()
         self.aux_pth = self.pth_dic['auxillary_files']
         self.voc_pth = self.pth_dic['vocabulary']
@@ -33,13 +34,16 @@ class DataProcessor:
         except KeyError:
             self.source_pth = None
         
-        self.med_file = self.aux_pth+'medications_v11.json'
-        self.unittype_file = self.user_input_pth+'unit_type_v2.json'
-        self.dischargeloc_file = self.user_input_pth+'discharge_location_v2.json'
-        self.admissionorigin_file = self.user_input_pth+'admission_origins_v2.json'
+        self.med_file = self.aux_pth + 'medications_v11.json'
+        self.diag_file = self.aux_pth + 'diagnoses.json'
+        self.unittype_file = self.user_input_pth + 'unit_type_v2.json'
+        self.dischargeloc_file = self.user_input_pth + 'discharge_location_v2.json'
+        self.admissionorigin_file = self.user_input_pth + 'admission_origins_v2.json'
 
         self.ohdsi_med = self._read_json(self.med_file)
-        self.med_concept_id = self._med_concept_id_mapping()
+        self.ohdsi_diag = self._read_json(self.diag_file)
+        self.med_concept_id = self._concept_id_mapping(self.ohdsi_med)
+        self.diag_concept_id = self._concept_id_mapping(self.ohdsi_diag)
 
         self.formatted_ts_dir = self.blendedicu_pth + 'formatted_timeseries/'
         self.formatted_med_dir = self.blendedicu_pth + 'formatted_medications/'
@@ -50,6 +54,7 @@ class DataProcessor:
 
         self.time_col = 'time'
         self.idx_col = 'patient'
+        self.uniquepid_col = 'uniquepid'
         self.mor_col = 'mortality'
         self.los_col = 'lengthofstay'
 
@@ -68,18 +73,20 @@ class DataProcessor:
         self.admission_origins = self._load_mapping(self.admissionorigin_file)
         self.discharge_locations = self._load_mapping(self.dischargeloc_file)
         self.unit_types = self._load_mapping(self.unittype_file)
-        self.med_mapping = self._load_med_mapping()
+        self.med_mapping = self._label_to_blended_mapping(self.ohdsi_med)
+        self.diag_mapping = self._label_to_blended_mapping(self.ohdsi_diag)
         self.clipping_quantiles = None
         self.labels = None
         self.med_savepath = f'{self.savepath}/medication.parquet'
         self.labels_savepath = f'{self.savepath}/labels.parquet'
         self.flat_savepath = f'{self.savepath}/flat_features.parquet'
+        self.diag_savepath = f'{self.savepath}/diagnoses.parquet'
 
-    def _labels_pth(self, dataset):
+    def _preprocessed_pth(self, dataset, name):
         return (f'{self.data_pth}/'
                 +self._datadir_name(dataset)
-                +'preprocessed_labels.parquet')
-    
+                +f'preprocessed_{name}.parquet')
+
     def _datadir_name(self, dataset=None):
         if dataset is None:
             dataset = self.dataset
@@ -134,8 +141,8 @@ class DataProcessor:
             df_list = self._concat(*df_list[:2]) + df_list[2:]
         return df_list[0]
 
-    def _med_concept_id_mapping(self):
-        dic = {ing: m['blended'] for ing, m in self.ohdsi_med.items()}
+    def _concept_id_mapping(self, ohdsi_mapping):
+        dic = {ing: m['blended'] for ing, m in ohdsi_mapping.items()}
         return pd.Series(dic)
 
     def _read_json(self, pth, encoding=None):
@@ -228,7 +235,7 @@ class DataProcessor:
         mapping = ({v: key for v in val} for key, val in jsonfile.items())
         return reduce(operator.ior, mapping)
 
-    def _load_med_mapping(self):
+    def _label_to_blended_mapping(self, ohdsi_mapping):
         """
         Loads the medication mapping that was created by 0_prepare_files.py
         For source databases, each entry is a list of labels,
@@ -236,9 +243,9 @@ class DataProcessor:
         """
         if self.dataset != 'blended':
             mapping = ({v: key for v in val[self.dataset]}
-                       for key, val in self.ohdsi_med.items())
+                       for key, val in ohdsi_mapping.items())
             return reduce(operator.ior, mapping)
-        return {val[self.dataset]: key for key, val in self.ohdsi_med.items()}
+        return {val[self.dataset]: key for key, val in ohdsi_mapping.items()}
         
     def reset_chunk_idx(self):
         self.chunk_idx = 0

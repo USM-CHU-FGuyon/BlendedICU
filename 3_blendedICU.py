@@ -9,6 +9,7 @@ are optional and customizable using the config.json file.
 """
 from blended_preprocessing.timeseries import blendedicuTSP
 from blended_preprocessing.flat_and_labels import blended_FLProcessor
+from blended_preprocessing.diagnoses import blended_DiagProcessor
 
 flp = blended_FLProcessor(datasets=['mimic4',
                                     'mimic3',
@@ -17,6 +18,12 @@ flp = blended_FLProcessor(datasets=['mimic4',
                                     'eicu'])
 flp.run_flat_and_labels()
 
+dp = blended_DiagProcessor(datasets=['mimic4'])
+
+dp.run()
+
 tsp = blendedicuTSP(compute_index=False)
 
 tsp.run(reset_dir=False)
+
+

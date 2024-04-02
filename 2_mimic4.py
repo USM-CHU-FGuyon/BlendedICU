@@ -6,6 +6,7 @@ The preprocessed BlendedICU dataset will then be obtained with 3_blendedICU.py
 Approximate running time: 2h.
 """
 from mimic4_preprocessing.flat_and_labels import mimic4_FLProcessor
+from mimic4_preprocessing.diagnoses import mimic4_DiagProcessor
 from mimic4_preprocessing.timeseries import mimic4TSP
 
 tsp = mimic4TSP(
@@ -19,3 +20,7 @@ tsp.run(reset_dir=False)
 flp = mimic4_FLProcessor()
 
 flp.run_labels()
+
+dp = mimic4_DiagProcessor()
+
+dp.run()

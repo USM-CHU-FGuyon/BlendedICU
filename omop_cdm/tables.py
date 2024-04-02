@@ -49,7 +49,7 @@ class CDMTables:
             'concept_relationship': None,
             'concept_synonym': None,
             'condition_era': None,
-            'condition_occurrence': None,
+            'condition_occurrence': self._condition_occurrence_schema(),
             'cost': None,
             'device_exposure': None,
             'dose_era': None,
@@ -74,6 +74,16 @@ class CDMTables:
     def _dtype(self, dtypestr):
         return self._dtype_mapping[dtypestr]
 
+    def field_required(self, field, table ):
+        idx = ((self.field_level.cdmTableName=='CONDITION_OCCURRENCE')
+               & (self.field_level.cdmFieldName=='visit_occurrence_id'))
+        
+        isrequired = self.field_level.loc[idx, 'isRequired']
+        
+        if isrequired.empty:
+            return False
+        return (isrequired=='Yes').all()
+    
     def initialize_tables(self):
         cdmtables = {}
 
@@ -288,6 +298,26 @@ class CDMTables:
                             ('valid_start_date', pa.date32()),
                             ('valid_end_date', pa.date32()),
                             ('invalid_reason', pa.string())])
+        return schema
+
+    @staticmethod
+    def _condition_occurrence_schema():
+        schema = pa.schema([('condition_occurrence_id', pa.int64()),
+                            ('person_id', pa.int64()),
+                            ('condition_concept_id', pa.int32()),
+                            ('condition_start_date', pa.date32()),
+                            ('condition_start_datetime', pa.timestamp('s')),
+                            ('condition_end_date', pa.date32()),
+                            ('condition_end_datetime', pa.timestamp('s')),
+                            ('condition_type_concept_id', pa.int32()),
+                            ('condition_status_concept_id', pa.int32()),
+                            ('stop_reason', pa.string()),
+                            ('provider_id', pa.int32()),
+                            ('visit_occurrence_id', pa.int64()),
+                            ('visit_detail_id', pa.int64()),
+                            ('condition_source_value', pa.string()),
+                            ('condition_source_concept_id', pa.int32()),
+                            ('condition_status_source_value', pa.string())])
         return schema
 
 
