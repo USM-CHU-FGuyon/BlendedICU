@@ -9,6 +9,7 @@ import random
 
 import natsort
 import pandas as pd
+import polars as pl
 
 
 class DataProcessor:
@@ -40,8 +41,8 @@ class DataProcessor:
         self.dischargeloc_file = self.user_input_pth + 'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth + 'admission_origins_v2.json'
 
-        self.ohdsi_med = self._read_json(self.med_file)
-        self.ohdsi_diag = self._read_json(self.diag_file)
+        self.ohdsi_med = self._load_ohdsi_mapping(self.med_file)
+        self.ohdsi_diag = self._load_ohdsi_mapping(self.diag_file)
         self.med_concept_id = self._concept_id_mapping(self.ohdsi_med)
         self.diag_concept_id = self._concept_id_mapping(self.ohdsi_diag)
 
@@ -145,6 +146,14 @@ class DataProcessor:
         dic = {ing: m['blended'] for ing, m in ohdsi_mapping.items()}
         return pd.Series(dic)
 
+    def _load_ohdsi_mapping(self, pth):
+        ohdsi_json = self._read_json(pth)
+        
+        for key in ohdsi_json:
+            if self.dataset not in ohdsi_json[key]:
+                ohdsi_json[key][self.dataset] = []
+        return ohdsi_json
+
     def _read_json(self, pth, encoding=None):
         if encoding is None:
             with open(pth, 'rb') as file_binary:
@@ -167,6 +176,7 @@ class DataProcessor:
             print(f'Loading {n} timeseries...')
         return pd.read_parquet(pth, **kwargs)
 
+
     def save(self, df, savepath, pyarrow_schema=None, verbose=True):
         """
         convenience function: save safely a file to parquet by creating the 
@@ -175,7 +185,10 @@ class DataProcessor:
         Path(savepath).parent.mkdir(parents=True, exist_ok=True)
         if verbose:
             print(f'   saving {savepath}')
-        df.to_parquet(savepath, schema=pyarrow_schema)
+        if isinstance(df, pl.dataframe.frame.DataFrame):
+            df.write_parquet(savepath)
+        else:
+            df.to_parquet(savepath, schema=pyarrow_schema)
         return df
 
     def rmdir(self, pth):
@@ -242,6 +255,7 @@ class DataProcessor:
         The blendedicu entries are the unique concept_id as an int.
         """
         if self.dataset != 'blended':
+
             mapping = ({v: key for v in val[self.dataset]}
                        for key, val in ohdsi_mapping.items())
             return reduce(operator.ior, mapping)
