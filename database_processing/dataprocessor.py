@@ -58,7 +58,10 @@ class DataProcessor:
         self.uniquepid_col = 'uniquepid'
         self.mor_col = 'mortality'
         self.los_col = 'lengthofstay'
-
+        self.col_offset = 'offset'
+        self.col_variable = 'variable'
+        self.col_value = 'value'
+        
         self.upper_los = self.config['upper_los']['value']
         self.preadm_anteriority = self.config['preadm_anteriority']['value']
         self.drug_exposure_time = self.config['drug_exposure_time']['value']
@@ -176,6 +179,10 @@ class DataProcessor:
             print(f'Loading {n} timeseries...')
         return pd.read_parquet(pth, **kwargs)
 
+    def scan(self, pth):
+        if Path(pth).is_dir():
+            return pl.scan_parquet(pth+'/*.parquet')
+        return pl.scan_parquet(pth)
 
     def save(self, df, savepath, pyarrow_schema=None, verbose=True):
         """

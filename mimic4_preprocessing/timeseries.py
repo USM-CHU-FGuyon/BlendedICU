@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 
 from database_processing.timeseriesprocessor import TimeseriesProcessor
 
@@ -16,74 +16,82 @@ class mimic4TSP(TimeseriesProcessor):
                  outputevents_pth):
         super().__init__(dataset='mimic4')
 
-        self.medication = self.load(self.savepath+med_pth)
-        self.timeseries = self.load(self.savepath+ts_pth)
-        self.timeseries_lab = self.load(self.savepath+tslab_pth)
-        self.outputevents = self.load(self.savepath+outputevents_pth,
-                                      columns=['stay_id',
-                                               'offset',
-                                               'value',
-                                               'label'])
+
+        self.labels = self.load(self.labels_savepath)
+        self.lf_medication = self.scan(self.savepath+med_pth)
+        self.lf_timeseries = self.scan(self.savepath+ts_pth)
+        self.lf_timeseries_lab = self.scan(self.savepath+tslab_pth)
+        self.lf_outputevents = self.scan(self.savepath+outputevents_pth).select('stay_id',
+                 'offset',
+                 'value',
+                 'label')
 
         self.colnames_med = {
             'col_id': 'stay_id',
             'col_var': 'label',
-            'col_value': 'value',
-            'col_time': 'offset'
         }
 
         self.colnames_ts = {
             'col_id': 'stay_id',
             'col_var': 'label',
             'col_value': 'valuenum',
-            'col_time': 'charttime'
+            'col_time': self.col_offset
         }
 
         self.colnames_lab = {
             'col_id': 'stay_id',
             'col_var': 'label',
             'col_value': 'valuenum',
-            'col_time': 'offset'
+            'col_time': self.col_offset
         }
 
         self.colnames_outputevents = {
             'col_id': 'stay_id',
             'col_var': 'label',
             'col_value': 'value',
-            'col_time': 'offset'
+            'col_time': self.col_offset
         }
+
+    def get_stays(self):
+        return self.labels.stay_id.unique()
 
     def run(self, reset_dir=None):
         self.reset_dir(reset_dir)
         
-        self.outputevents = self.filter_tables(self.outputevents,
-                                               kept_variables=self.kept_ts,
-                                               **self.colnames_outputevents)
+        self.lf_outputevents = self.harmonize_columns(self.lf_outputevents,
+                                                   **self.colnames_outputevents)
+        
+        self.lf_timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
+                                                   **self.colnames_lab)
+        
+        self.lf_timeseries = self.harmonize_columns(self.lf_timeseries,
+                                                   **self.colnames_ts)
+        
+        self.lf_medication = self.harmonize_columns(self.lf_medication,
+                                                   **self.colnames_med)
+        
+        lf_ts = pl.concat([self.lf_timeseries,
+                           self.lf_timeseries_lab,
+                           self.lf_outputevents],
+                             how='diagonal')
 
-        self.timeseries_lab = self.filter_tables(self.timeseries_lab,
-                                                 kept_variables=self.kept_ts,
-                                                 **self.colnames_lab)
+        self.stays = self.get_stays()
+        self.stay_chunks = self.get_stay_chunks()
 
-        self.timeseries = self.filter_tables(self.timeseries,
-                                             kept_variables=self.kept_ts,
-                                             **self.colnames_ts)
+        for chunk_number, stay_chunk in enumerate(self.stay_chunks):
+            
+            med = (self.filter_tables(self.lf_medication,
+                                    kept_variables=self.kept_med,
+                                    kept_stays=stay_chunk)
+                   .collect()
+                   .to_pandas())
+            
+            ts = (self.filter_tables(lf_ts,
+                                    kept_variables=self.kept_ts,
+                                    kept_stays=stay_chunk)
+                  .collect()
+                  .to_pandas())
 
-        self.medic = self.filter_tables(self.medication,
-                                      kept_variables=self.kept_med,
-                                      **self.colnames_med)
-
-        self.timeser = pd.concat([self.timeseries,
-                                  self.timeseries_lab,
-                                  self.outputevents],
-                                 axis=0)
-
-        patientids = self.timeser.patient.drop_duplicates()
-        self.chunks = self.generate_patient_chunks(patientids)
-
-        for chunk_number, patient_chunk in enumerate(self.chunks):
-            ts_chunk = self.timeser.loc[self.timeser.patient.isin(patient_chunk)]
-            med_chunk = self.medic.loc[self.medic.patient.isin(patient_chunk)]
-
-            self.process_tables(ts_chunk,
-                                med=med_chunk,
+            self.process_tables(ts,
+                                med=med,
                                 chunk_number=chunk_number)

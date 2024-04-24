@@ -9,39 +9,46 @@ class hiridTSP(TimeseriesProcessor):
     """
     def __init__(self, ts_chunks, pharma_chunks):
         super().__init__(dataset='hirid')
-        self.ts_files = self.ls(self.savepath+ts_chunks)
-        self.pharma_files = self.ls(self.savepath+pharma_chunks)
+        self.lf_ts = self.scan(self.savepath+ts_chunks)
+        self.lf_med = self.scan(self.savepath+pharma_chunks)
 
         self.med_colnames = {'col_id': 'admissionid',
-                             'col_var': 'label',
-                             'col_value': 'value',
-                             'col_time': 'offset'}
+                             'col_var': 'label'}
 
         self.ts_colnames = {'col_id': 'admissionid',
                             'col_var': 'variable',
                             'col_value': 'value',
-                            'col_time': 'offset'}
+                            'col_time': self.col_offset}
 
         self.loadcols = self.ts_colnames.values()
 
+    def _get_stays(self):
+        stays = self.scan(self.labels_savepath).select('admissionid').unique().collect().to_numpy().flatten()
+        return stays
+    
     def run(self, reset_dir=None):
 
         self.reset_dir(reset_dir)
-
+        self.stays = self._get_stays()
+        self.stay_chunks = self.get_stay_chunks()
         kept_variables = (self.kept_ts+['Body weight', 'Body height measure'])
 
-        for chunk_number, (ts_pth, pharma_pth) in enumerate(zip(self.ts_files, self.pharma_files)):
-            self.timeseries = self.load(ts_pth, columns=self.loadcols)
+        self.lf_ts = self.harmonize_columns(self.lf_ts, **self.ts_colnames)
+        self.lf_med = self.harmonize_columns(self.lf_med, **self.med_colnames)
 
-            self.pharma = self.load(pharma_pth)
+        for chunk_number, stay_chunk in enumerate(self.stay_chunks):
+            print(f'Chunk {chunk_number}')
 
-            ts = self.filter_tables(self.timeseries,
-                                    kept_variables,
-                                    **self.ts_colnames)
-            self.ts = ts
+            ts = (self.filter_tables(self.lf_ts,
+                                    kept_variables=kept_variables,
+                                    kept_stays=stay_chunk)
+                  .collect(streaming=True)
+                  .to_pandas())
 
-            med = self.filter_tables(self.pharma,
-                                     self.kept_med,
-                                     **self.med_colnames)
+            med = (self.filter_tables(self.lf_med,
+                                     kept_variables=self.kept_med,
+                                     kept_stays=stay_chunk)
+                   .collect()
+                   .to_pandas())
 
             self.process_tables(ts, med=med, chunk_number=chunk_number)

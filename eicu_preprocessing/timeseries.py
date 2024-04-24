@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 
 from database_processing.timeseriesprocessor import TimeseriesProcessor
 
@@ -19,54 +19,53 @@ class eicuTSP(TimeseriesProcessor):
                  inout_pth):
         super().__init__(dataset='eicu')
 
-        self.medication = self.load(self.med_savepath)
-
-        self.flat = self.load(self.flat_savepath)
-        self.tslab_files = self.ls(self.savepath+lab_pth)
-        self.tsresp_files = self.ls(self.savepath+resp_pth)
-        self.tsnurse_files = self.ls(self.savepath+nurse_pth)
-        self.tsaperiodic_files = self.ls(self.savepath+aperiodic_pth)
-        self.tsperiodic_files = self.ls(self.savepath+periodic_pth)
-        self.tsinout_files = self.ls(self.savepath+inout_pth)
+        self.lf_med = self.scan(self.med_savepath)
+        self.labels = self.scan(self.labels_savepath)
+        self.flat = self.scan(self.flat_savepath).collect().to_pandas()
+        self.lf_tslab = self.scan(self.savepath+lab_pth)
+        self.lf_tsresp = self.scan(self.savepath+resp_pth)
+        self.lf_tsnurse = self.scan(self.savepath+nurse_pth)
+        self.lf_tsaperiodic = self.scan(self.savepath+aperiodic_pth)
+        self.lf_tsperiodic = self.scan(self.savepath+periodic_pth)
+        self.lf_tsinout = self.scan(self.savepath+inout_pth)
 
         self.colnames_lab = {
             'col_id': 'patientunitstayid',
             'col_var': 'labname',
             'col_value': 'labresult',
-            'col_time': 'labresultoffset'
+            'col_time': self.col_offset
         }
 
         self.colnames_resp = {
             'col_id': 'patientunitstayid',
             'col_var': 'respchartvaluelabel',
             'col_value': 'respchartvalue',
-            'col_time': 'respchartoffset'
+            'col_time': self.col_offset
         }
 
         self.colnames_inout = {
             'col_id': 'patientunitstayid',
             'col_var': 'celllabel',
             'col_value': 'cellvaluenumeric',
-            'col_time': 'intakeoutputoffset'
+            'col_time': self.col_offset
         }
 
         self.colnames_nurse = {
             'col_id': 'patientunitstayid',
             'col_var': 'nursingchartcelltypevallabel',
             'col_value': 'nursingchartvalue',
-            'col_time': 'nursingchartoffset'
+            'col_time': self.col_offset
         }
 
         self.colnames_med = {
             'col_id': 'patientunitstayid',
             'col_var': 'label',
-            'col_value': 'value',
-            'col_time': 'drugoffset'
+            'col_value': 'value'
         }
 
-        self.colnames_tsper = {
+        self.colnames_tshor = {
             'col_id': 'patientunitstayid',
-            'col_time': 'observationoffset'
+            'col_time': self.col_offset
         }
 
     def _get_admission_hours(self):
@@ -74,59 +73,69 @@ class eicuTSP(TimeseriesProcessor):
                                     .apply(lambda x: f'{self.dataset}-{x}'))
         return self.flat.loc[:, ['patient', 'hour']].set_index('patient')
 
+    def _get_stays(self):
+        return self.labels.select('patientunitstayid').unique().collect().to_numpy().flatten()
+    
     def run(self, reset_dir=None):
 
         self.reset_dir(reset_dir)
-
-        self.medication = self.filter_tables(self.medication,
-                                             kept_variables=self.kept_med,
+        self.stays = self._get_stays()
+        self.stay_chunks = self.get_stay_chunks()
+        
+        self.lf_med = self.harmonize_columns(self.lf_med,
                                              **self.colnames_med)
+
+        self.lf_tsresp = self.harmonize_columns(self.lf_tsresp,
+                                                **self.colnames_resp)
+        
+        self.lf_tsnurse = self.harmonize_columns(self.lf_tsnurse,
+                                                 **self.colnames_nurse)
+        
+        self.lf_tsinout = self.harmonize_columns(self.lf_tsinout,
+                                                 **self.colnames_inout)
+        
+        self.lf_tslab = self.harmonize_columns(self.lf_tslab,
+                                               **self.colnames_lab)
+        
+        self.lf_tsperiodic = self.harmonize_columns(self.lf_tsperiodic,
+                                                    **self.colnames_tshor)
+        
+        self.lf_tsaperiodic = self.harmonize_columns(self.lf_tsaperiodic,
+                                                     **self.colnames_tshor)
+
+        lf_ts_ver = pl.concat([
+            self.lf_tslab,
+            self.lf_tsresp,
+            self.lf_tsnurse,
+            self.lf_tsinout,
+            ])
+        
+        lf_ts_hor = (self.lf_tsperiodic
+                     .join(self.lf_tsaperiodic,
+                           on=(self.idx_col, self.time_col),
+                           how='outer_coalesce'))
 
         admission_hours = self._get_admission_hours()
 
-        for chunk_number, pths in enumerate(zip(self.tslab_files,
-                                                self.tsresp_files,
-                                                self.tsnurse_files,
-                                                self.tsperiodic_files,
-                                                self.tsaperiodic_files,
-                                                self.tsinout_files)):
-
-            tslab, tsresp, tsnurse, tsperiodic, tsaperiodic, tsinout = map(self.load, pths)
-
-            tslab = self.filter_tables(tslab,
-                                       kept_variables=self.kept_ts,
-                                       **self.colnames_lab)
-
-            tsresp = self.filter_tables(tsresp,
-                                        kept_variables=self.kept_ts,
-                                        **self.colnames_resp)
-
-            tsnurse = self.filter_tables(tsnurse,
+        for i, stay_chunk in enumerate(self.stay_chunks):
+            
+            ts_ver = (self.filter_tables(lf_ts_ver,
                                          kept_variables=self.kept_ts,
-                                         **self.colnames_nurse)
+                                         kept_stays=stay_chunk)
+                      .collect().to_pandas())
+            
+            ts_hor = (self.filter_tables(lf_ts_hor,
+                                         kept_stays=stay_chunk,
+                                         )
+                      .collect().to_pandas())
 
-            tsinout = self.filter_tables(tsinout,
-                                         kept_variables=self.kept_ts,
-                                         **self.colnames_inout)
-
-            tsperiodic = self.filter_tables(tsperiodic,
-                                            **self.colnames_tsper)
-
-            tsaperiodic = self.filter_tables(tsaperiodic,
-                                             **self.colnames_tsper)
-
-            ts_ver = pd.concat([tslab, tsresp, tsnurse, tsinout])
-
-            idx_chunk = self.medication.patient.isin(ts_ver.patient.unique())
-
-            medication_chunk = self.medication.loc[idx_chunk]
-
-            ts_hor = tsperiodic.merge(tsaperiodic,
-                                      how='outer',
-                                      on=['patient', 'time'])
+            med = (self.filter_tables(self.lf_med, 
+                                     kept_stays=stay_chunk,
+                                     kept_variables=self.kept_med)
+                   .collect().to_pandas())
 
             self.process_tables(ts_ver,
                                 ts_hor,
-                                med=medication_chunk,
+                                med=med,
                                 admission_hours=admission_hours,
-                                chunk_number=chunk_number)
+                                chunk_number=i)

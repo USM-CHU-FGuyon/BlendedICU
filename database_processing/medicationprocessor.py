@@ -13,6 +13,8 @@ class MedicationProcessor(DataProcessor):
     omop ingredients using the drug mapping (auxillary_files/medications.json).
     The outputs a dataframe that is saved as medication.parquet file or as 
     several parquet chunks when filesize is inconvenient.
+    
+    TODO : polars
     """
     def __init__(self,
                  dataset,

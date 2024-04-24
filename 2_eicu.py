@@ -9,12 +9,12 @@ from eicu_preprocessing.flat_and_labels import eicu_FLProcessor
 from eicu_preprocessing.timeseries import eicuTSP
 
 tsp = eicuTSP(
-    lab_pth='tslab_1000_patient_chunks/',
-    resp_pth='tsresp_1000_patient_chunks/',
-    nurse_pth='tsnurse_1000_patient_chunks/',
-    aperiodic_pth='tsperiodic_1000_patient_chunks/',
-    periodic_pth='tsaperiodic_1000_patient_chunks/',
-    inout_pth='tsintakeoutput_1000_patient_chunks/')
+    lab_pth='lab.parquet',
+    resp_pth='tsresp.parquet',
+    nurse_pth='tsnurse/',
+    aperiodic_pth='tsaperiodic.parquet',
+    periodic_pth='tsperiodic/',
+    inout_pth='tsintakeoutput.parquet')
 
 tsp.run(reset_dir=False)
 

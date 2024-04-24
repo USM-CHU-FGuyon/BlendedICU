@@ -9,7 +9,7 @@ from amsterdam_preprocessing.timeseries import amsterdamTSP
 from amsterdam_preprocessing.flat_and_labels import Ams_FLProcessor
 
 tsp = amsterdamTSP(
-    ts_chunks='numericitems_1000_patient_chunks/',
+    ts_chunks='numericitems/',
     listitems_pth='listitems.parquet',
     gcs_scores_pth='glasgow_coma_scores.parquet')
 

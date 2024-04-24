@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
@@ -24,22 +25,33 @@ class mimic4Preparator(DataPreparator):
         self.dlabitems_pth = f'{self.savepath}d_labitems.parquet'
         self.ddiagnoses_pth = f'{self.savepath}d_icd_diagnoses.parquet'
         self.tslab_savepath = f'{self.savepath}/timeserieslab.parquet'
-        self.ts_savepath = f'{self.savepath}/timeseries.parquet'
+        self.ts_savepath = f'{self.savepath}/timeseries/'
         self.outputevents_savepath = f'{self.savepath}/timeseriesoutputs.parquet'
         self.col_los = 'los'
         self.unit_los = 'day'
 
-        
+
     def gen_icustays(self):
-        admissions = pd.read_parquet(self.admissions_pth,
-                                     columns=['hadm_id',
-                                              'race',
-                                              'admission_location',
-                                              'insurance',
-                                              'discharge_location',
-                                              'hospital_expire_flag'])
-        icustays = pd.read_parquet(self.icustays_pth)
-        return icustays.merge(admissions, on='hadm_id')
+        
+        admissions = pl.scan_parquet(self.admissions_pth)
+        icustays = pl.scan_parquet(self.icustays_pth)
+        
+        df_icustays = (admissions
+                       .select(['hadm_id',
+                                'race',
+                                'admission_location',
+                                'insurance',
+                                'discharge_location',
+                                'hospital_expire_flag'])
+                       .join(icustays, on='hadm_id')
+                       .with_columns(
+                           pl.col('intime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                           pl.col('outtime').str.to_datetime("%Y-%m-%d %H:%M:%S")
+                           )
+                       .collect())
+        
+        return df_icustays
+        
 
     def load_raw_tables(self):
         """
@@ -72,9 +84,14 @@ class mimic4Preparator(DataPreparator):
         are fetched to fill the flat and labels tables.
         They can be found under several itemids depending on the unit in 
         which they are measured. Every value is converted to the metric system.
+        
+        TODO : convert to polars
+        
         """
         print('Fetching heights and weights in the chartevents table...'
               'this may take several minutes.')
+        
+        icustays = self.icustays.to_pandas()
         itemids = {'weight_kg_2': 224639,
                    'weight_kg': 226512,
                    'weight_lbs': 226531,
@@ -93,7 +110,7 @@ class mimic4Preparator(DataPreparator):
         dfs_hw = []
         for i, df in enumerate(chartevents):
             print(f'Read {(i+1)*self.chunksize} lines from chartevents table...')
-            df = df.merge(self.icustays[['stay_id', 'intime']], on='stay_id')
+            df = df.merge(icustays[['stay_id', 'intime']], on='stay_id')
                     
             df['measuretime'] = ((pd.to_datetime(df['charttime'])
                                  - pd.to_datetime(df['intime']))
@@ -129,6 +146,7 @@ class mimic4Preparator(DataPreparator):
 
     def gen_flat(self):
         print('o Flat Features')
+        icustays = self.icustays.to_pandas()
         patients = pd.read_parquet(self.patients_pth,
                                    columns=['subject_id',
                                             'gender',
@@ -136,7 +154,7 @@ class mimic4Preparator(DataPreparator):
 
         self.heights, self.weights = self._fetch_heights_weights()
 
-        df_flat = (self.icustays
+        df_flat = (icustays
                            .merge(patients, on='subject_id', how='left')
                            .merge(self.heights, on='stay_id', how='left')
                            .merge(self.weights, on='stay_id', how='left')
@@ -155,36 +173,41 @@ class mimic4Preparator(DataPreparator):
         return self.save(df_flat, self.flat_savepath)
 
     def _load_inputevents(self):
-        inputevents = pd.read_parquet(self.inputevents_pth,
-                                      columns=['hadm_id',
-                                               'stay_id',
-                                               'starttime',
-                                               'itemid'])
-
-        d_items = pd.read_parquet(self.ditems_pth, columns=['itemid', 'label'])
-
-        return (inputevents.merge(d_items[['itemid', 'label']], on='itemid')
-                .drop(columns=['hadm_id', 'itemid'])
-                .rename(columns={'starttime': 'time'}))
-
+        inputevents = pl.scan_parquet(self.inputevents_pth)
+        d_items = pl.scan_parquet(self.ditems_pth)
+        
+        df_inputevents = (inputevents
+                          .select(['stay_id',
+                                   'starttime',
+                                   'itemid'])
+                          .join(d_items.select(['itemid', 'label']), on='itemid')
+                          .drop('itemid')
+                          .rename({'starttime': 'time'})
+                          .collect())
+        return df_inputevents
+        
     def gen_diagnoses(self):
-        diagnoses = self.load(self.diagnoses_pth, columns=['subject_id',
-                                                           'hadm_id',
-                                                           'icd_code',
-                                                           'icd_version'])
-        d_diagnoses = self.load(self.ddiagnoses_pth, columns=['icd_code',
-                                                              'icd_version',
-                                                              'long_title'])
-        
-        df_diagnoses = diagnoses.merge(d_diagnoses, on=['icd_code', 'icd_version'])
-        self.save(df_diagnoses, self.diag_savepath)
-        
+        diagnoses = pl.scan_parquet(self.diagnoses_pth)
+        d_diagnoses = pl.scan_parquet(self.ddiagnoses_pth)
+    
+        df_diagnoses = (diagnoses
+                        .select(['subject_id',
+                                 'hadm_id',
+                                 'icd_code',
+                                 'icd_version'])
+                        .join(d_diagnoses.select(['icd_code',
+                                                  'icd_version',
+                                                  'long_title']),
+                              on=['icd_code', 'icd_version'])
+                        .collect())
+        return self.save(df_diagnoses, self.diag_savepath)
+    
         
     def gen_medication(self):
         """
         Medication can be found in the inputevents table.
         """
-        inputevents = self._load_inputevents()
+        inputevents = self._load_inputevents().to_pandas()
         icustays = pd.read_parquet(self.icustays_pth,
                                    columns=['stay_id', 'intime', 'los'])
 
@@ -203,41 +226,56 @@ class mimic4Preparator(DataPreparator):
 
     def gen_labels(self):
         print('o Labels')
-        labels = self.icustays.loc[:, ['subject_id', 'hadm_id',
+        
+        icustays = self.icustays.lazy()
+
+        hospital_mortality = (icustays
+                              .group_by("hadm_id")
+                              .agg(pl.col("hospital_expire_flag").max()))
+        
+        self.labels = (icustays.select('subject_id', 'hadm_id',
                                        'stay_id', 'los', 'intime',
-                                       'discharge_location', 'first_careunit']]
+                                       'discharge_location', 'first_careunit')
+                       
+                       .join(hospital_mortality, on='hadm_id')
+                        .with_columns(
+                            care_site=pl.lit('Beth Israel Deaconess Medical Center')
+                            )
+                        .sort('stay_id')
+                        .collect())
 
-        hospital_mortality = (self.icustays.groupby('hadm_id')
-                                           .hospital_expire_flag.max())
-
-        labels = labels.merge(hospital_mortality, on='hadm_id')
-        labels['care_site'] = 'Beth Israel Deaconess Medical Center'
-
-        labels = labels.sort_values('stay_id')
-        self.labels = labels
-        self.save(labels, self.labels_savepath)
+        self.save(self.labels, self.labels_savepath)
 
     def gen_timeseriesoutputs(self):
         """
         The output table is small enough to be processed all at once.
         """
-        self.get_labels()
-        ditems = self.load(self.ditems_pth, columns=['itemid', 'label'])
-
-        outputevents = self.load(self.outputevents_pth,
-                                 columns=['hadm_id',
-                                          'charttime',
-                                          'itemid',
-                                          'value'])
-
-        df_outputs = (outputevents.pipe(self.prepare_tstable,
-                                        col_offset='charttime',
-                                        col_intime='intime',
-                                        col_variable='itemid',
-                                        col_mergestayid='hadm_id')
-                      .merge(ditems, on='itemid')
-                      .drop(columns=['hadm_id', 'itemid'])
-                      .rename(columns={'charttime': 'offset'}))
+        self.get_labels(lazy=True)
+        ditems = pl.scan_parquet(self.ditems_pth)
+        
+        outputevents = pl.scan_parquet(self.outputevents_pth)
+        
+        df_outputs = (outputevents
+                      .select('hadm_id',
+                               'charttime',
+                               'itemid',
+                               'value')
+                      .with_columns(
+                          pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                          pl.col('hadm_id').cast(pl.Int64)
+                          )
+                      .pipe(self.pl_prepare_tstable,
+                            col_measuretime='charttime',
+                            col_intime='intime',
+                            col_variable='itemid',
+                            col_mergestayid='hadm_id',
+                            unit_los='day',
+                            col_value='value'
+                            )
+                      .join(ditems.select('itemid', 'label'), on='itemid')
+                      .drop('hadm_id', 'itemid')
+                      .collect()
+                      )
 
         self.save(df_outputs, self.outputevents_savepath)
 
@@ -246,20 +284,84 @@ class mimic4Preparator(DataPreparator):
         This timeserieslab table does not fit in memory, it is processed by 
         chunks. The processed table is smaller so it is saved to a single file.
         """
-        self.get_labels()
+        self.get_labels(lazy=True)
 
-        dlabitems = pd.read_parquet(self.dlabitems_pth,
-                                    columns=['label', 'itemid'])
-
+        dlabitems = pl.scan_parquet(self.dlabitems_pth)
+        
         print('o Timeseries Lab')
-        labevents = pd.read_csv(self.labevents_pth,
-                                chunksize=self.chunksize,
-                                usecols=['hadm_id',
+        labevents = pl.read_csv(self.labevents_pth,
+                                columns=['hadm_id',
                                          'itemid',
                                          'charttime',
-                                         'valuenum'])
+                                         'valuenum']).lazy()
 
-        keepvars = ['MCV', 'Phosphate', 'Hemoglobin', 'PTT', 'Platelet Count',
+        keepvars = self._lab_keepvars()
+
+        keepitemids = dlabitems.filter(pl.col('label').is_in(keepvars)).select('itemid').collect()
+
+        self.df_lab = (labevents
+                       .select('hadm_id', 'itemid', 'charttime', 'valuenum')
+                       .drop_nulls()
+                       .with_columns(
+                           pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                           pl.col('hadm_id').cast(pl.Int64)
+                           )
+                       .pipe(self.pl_prepare_tstable,
+                             keepvars=keepitemids,
+                             col_measuretime='charttime',
+                             col_intime='intime',
+                             col_variable='itemid',
+                             col_mergestayid='hadm_id',
+                             unit_los='day',
+                             col_value='valuenum')
+                       .join(dlabitems.select('itemid', 'label'), on='itemid')
+                       .drop(['hadm_id', 'itemid'])
+                       .collect()
+                       )
+
+        self.save(self.df_lab, self.tslab_savepath)
+
+    def gen_timeseries(self):
+        self.get_labels(lazy=True)
+        ditems = pl.scan_parquet(self.ditems_pth)
+
+        chartevents = pd.read_csv(self.chartevents_pth,
+                                  chunksize=self.chunksize,
+                                  usecols=['stay_id',
+                                           'charttime',
+                                           'itemid',
+                                           'valuenum'])
+
+        print('o Timeseries')
+        keepvars = self._timeseries_keepvars()
+
+        keepitemids = ditems.filter(pl.col('label').is_in(keepvars)).select('itemid').collect().to_numpy().flatten()
+
+        for i, df in enumerate(chartevents):
+            
+            lf = pl.LazyFrame(df)
+            
+            ts = (lf.drop_nulls()
+                    .with_columns(
+                        pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                        pl.col('stay_id').cast(pl.Int64)
+                        )
+                  .pipe(self.pl_prepare_tstable,
+                        keepvars=keepitemids,
+                        col_measuretime='charttime',
+                        col_intime='intime',
+                        col_variable='itemid',
+                        col_value='valuenum',
+                        unit_los='day')
+                  .join(ditems.select('itemid', 'label'), on='itemid')
+                  .drop('itemid')
+                  .collect())
+                  
+            self.save(ts, self.ts_savepath+f'{i}.parquet')
+
+    @staticmethod
+    def _lab_keepvars():
+        return ['MCV', 'Phosphate', 'Hemoglobin', 'PTT', 'Platelet Count',
                     'RDW',
                     'Red Blood Cells', 'Magnesium', 'Creatinine',
                     'White Blood Cells',
@@ -274,41 +376,10 @@ class mimic4Preparator(DataPreparator):
                     'Temperature', 'Alanine Aminotransferase (ALT)',
                     'Alkaline Phosphatase', 'Asparate Aminotransferase (AST)',
                     'Bilirubin, Total', 'H', 'I', 'L', 'Albumin']
-
-        keepitemids = dlabitems.loc[dlabitems.label.isin(keepvars), 'itemid']
-
-        prepare_tslab = partial(self.prepare_tstable,
-                                keepvars=keepitemids,
-                                col_offset='charttime',
-                                col_intime='intime',
-                                col_variable='itemid',
-                                col_mergestayid='hadm_id')
-
-        self.df_lab = (pd.concat(map(prepare_tslab, labevents))
-                         .merge(dlabitems, on='itemid')
-                         .drop(columns=['hadm_id', 'itemid'])
-                         .rename(columns={'charttime': 'offset'}))
-
-        self.save(self.df_lab, self.tslab_savepath)
-
-    def gen_timeseries(self):
-        """
-        This timeseries table does not fit in memory, it is processed by 
-        chunks. The processed table is smaller so it is saved to a single file.
-        """
-        self.get_labels()
-        ditems = pd.read_parquet(self.ditems_pth, columns=['itemid', 'label'])
-
-        chartevents = pd.read_csv(self.chartevents_pth,
-                                  chunksize=self.chunksize,
-                                  usecols=['stay_id',
-                                           'charttime',
-                                           'itemid',
-                                           'valuenum'])
-
-        print('o Timeseries')
-
-        keepvars = ['Hemoglobin', 'Potassium (whole blood)',
+    
+    @staticmethod
+    def _timeseries_keepvars():
+        return ['Hemoglobin', 'Potassium (whole blood)',
                     'Glucose (whole blood)',
                     'Lactic Acid', 'Ionized Calcium', 'WBC',
                     'Hematocrit (serum)',
@@ -382,18 +453,3 @@ class mimic4Preparator(DataPreparator):
                     'Non-Invasive Blood Pressure Alarm - Low',
                     'Calcium non-ionized',
                     'Phosphorous']
-
-        keepitemids = ditems.loc[ditems.label.isin(keepvars), 'itemid']
-
-        prepare_tslab = partial(self.prepare_tstable,
-                                keepvars=keepitemids,
-                                col_offset='charttime',
-                                col_intime='intime',
-                                col_variable='itemid',
-                                )
-
-        self.df_ts = (pd.concat(map(prepare_tslab, chartevents))
-                        .merge(ditems, on='itemid')
-                        .drop(columns='itemid'))
-
-        self.save(self.df_ts, self.ts_savepath)

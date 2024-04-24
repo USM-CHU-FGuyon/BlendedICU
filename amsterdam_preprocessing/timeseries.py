@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 
 from database_processing.timeseriesprocessor import TimeseriesProcessor
 
@@ -12,66 +12,77 @@ class amsterdamTSP(TimeseriesProcessor):
     """
     def __init__(self, ts_chunks, listitems_pth, gcs_scores_pth):
         super().__init__(dataset='amsterdam')
-        self.ts_chunks = self.ls(self.savepath+ts_chunks)
-        self.listitems = self.load(self.savepath+listitems_pth)
-        self.medication = self.load(self.med_savepath,
-                                    columns=['admissionid',
+        self.lf_ts = self.scan(self.savepath+ts_chunks)
+        self.lf_listitems = self.scan(self.savepath+listitems_pth)
+        self.lf_medication = (self.scan(self.med_savepath)
+                           .select('admissionid',
                                              'label',
                                              'original_drugname',
                                              'start',
                                              'end',
-                                             'value'])
-        self.gcs_scores = self.load(self.savepath+gcs_scores_pth)
+                                             'value'))
+        print(self.savepath+gcs_scores_pth)
+        self.gcs_scores = self.scan(self.savepath+gcs_scores_pth)
         
         self.colnames_med = {
             'col_id': 'admissionid',
-            'col_var': 'label',
-            'col_value': 'value'}
+            'col_var': 'label'}
 
         self.colnames_ts = {
             'col_id': 'admissionid',
             'col_var': 'item',
             'col_value': 'value',
-            'col_time': 'measuredat'}
+            'col_time': self.col_offset}
 
         self.colnames_gcs = {
             'col_id': 'admissionid',
-            'col_time': 'measuredat'
+            'col_time': self.col_offset
             }
 
         self.tscols = self.colnames_ts.values()
 
-        self.gcs_scores = self.filter_tables(self.gcs_scores,
-                                             **self.colnames_gcs)
+        self.gcs_scores = self.harmonize_columns(self.gcs_scores, **self.colnames_gcs)
 
-    def _get_chunk(self, table, chunk_idx):
-        return table.loc[table.admissionid.isin(chunk_idx)]
+    def get_stays(self):
+        self.stays = (self.scan(self.labels_savepath)
+                      .select('admissionid')
+                      .unique()
+                      .collect()
+                      .to_numpy()
+                      .flatten())
+        return self.stays
     
     def run(self, reset_dir=None):
         self.reset_dir(reset_dir)
+        self.stays = self.get_stays()
+        self.stay_chunks = self.get_stay_chunks()
         
-        for chunk_number, data_pth in enumerate(self.ts_chunks):
-            numericitems_chunk = self.load(data_pth, columns=self.tscols)
+        self.ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)
+        self.listitems = self.harmonize_columns(self.lf_listitems, **self.colnames_ts)
+        lf_med = self.harmonize_columns(self.lf_medication, **self.colnames_med)
+        
+        lf_ts = pl.concat([self.ts, self.listitems], how='diagonal_relaxed')
+        
+        for chunk_number, stays in enumerate(self.stay_chunks):
 
-            chunk_ids = numericitems_chunk.admissionid.unique()
-
-            listitems_chunk = self._get_chunk(self.listitems, chunk_ids)
-            medication_chunk = self._get_chunk(self.medication, chunk_ids)
+            self.ts_chunk = (self.filter_tables(lf_ts,
+                                           kept_variables=self.kept_ts,
+                                           kept_stays=stays)
+                                  .collect(streaming=True)
+                                  .to_pandas())
             
-            timeseries_chunk = pd.concat([numericitems_chunk, listitems_chunk])
+            med_chunk = (self.filter_tables(lf_med,
+                                            kept_variables=self.kept_med,
+                                            kept_stays=stays)
+                                  .collect()
+                                  .to_pandas())
 
-            self.ts_table = self.filter_tables(timeseries_chunk,
-                                               self.kept_ts,
-                                               **self.colnames_ts)
+            self.gcs_scores_chunk = (self.filter_tables(self.gcs_scores,
+                                                        kept_stays=stays)
+                                     .collect()
+                                     .to_pandas())
 
-            self.med_table = self.filter_tables(medication_chunk,
-                                                self.kept_med,
-                                                **self.colnames_med)
-
-            gcs_scores_chunk_idx = self.gcs_scores.patient.isin(self.ts_table.patient)
-            self.gcs_scores_chunk = self.gcs_scores.loc[gcs_scores_chunk_idx]
-
-            self.process_tables(ts_ver=self.ts_table,
+            self.process_tables(ts_ver=self.ts_chunk,
                                 ts_hor=self.gcs_scores_chunk,
-                                med=self.med_table,
+                                med=med_chunk,
                                 chunk_number=chunk_number)

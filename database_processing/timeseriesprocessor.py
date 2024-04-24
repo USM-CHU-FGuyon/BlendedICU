@@ -7,6 +7,7 @@ labels and save the timeseries variables as parquet files.
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import numpy as np
 from natsort import natsorted
@@ -140,30 +141,51 @@ class TimeseriesProcessor(DataProcessor):
         ts_savepath = f'{self.partiallyprocessed_ts_dir}/{self.dataset}_{chunk_number}/'
         self.save_timeseries(self.chunk, ts_savepath)
 
+    def harmonize_columns(self,
+                              table,
+                              col_id=None,
+                              col_time=None,
+                              col_var=None,
+                              col_value=None):
+        
+        mapping = {k: v for k, v in {col_id: self.idx_col,
+                                     col_var: self.col_variable,
+                                     col_time: self.time_col,
+                                     col_value: self.col_value}.items()
+                   if k is not None}
+        
+        return table.rename(mapping)
+
     def filter_tables(self,
                       table,
                       kept_variables=None,
-                      col_id=None,
-                      col_time=None,
-                      col_var=None,
-                      col_value=None):
+                      kept_stays=None,
+                      ):
         """
         This function harmonizes the column names in the input table.
         It produces a unique stay id for the blendedICU dataset by appending
         the name of the source database to the original stay ids.
         if `kept_variable` is specified, it also filters a set of variables.
         """
-        table = table.rename(columns={col_id: self.idx_col,
-                                      col_var: 'variable',
-                                      col_time: self.time_col,
-                                      col_value: 'value'})
+        
+        def _filters(kept_variables, kept_stays):
+            
+            filters = []
+            
+            if kept_variables is not None:
+                filters.append(pl.col(self.col_variable).is_in(kept_variables))
+            if kept_stays is not None:
+                filters.append(pl.col(self.idx_col).is_in(kept_stays))
+            return filters
+        
+        table = (table
+                 .filter(_filters(kept_variables, kept_stays))
+                 .with_columns(
+                     (self.dataset+'-'+pl.col(self.idx_col).cast(pl.String)).alias(self.idx_col)
+                     )
+                 )
 
-        table[self.idx_col] = table[self.idx_col].apply(lambda x: f'{self.dataset}-{x}')
-
-        if kept_variables is None:
-            return table
-
-        return table.loc[table['variable'].isin(kept_variables)]
+        return table
 
     @staticmethod
     def _set_patient_time_index(ts, cols_index):
@@ -197,6 +219,7 @@ class TimeseriesProcessor(DataProcessor):
         ver_patients = ts_ver.index.get_level_values(0)
         hor_patients = ts_hor.index.get_level_values(0)
         med_patients = med.patient
+
         unique_patients = (ver_patients.union(hor_patients)
                                        .union(med_patients)
                                        .drop_duplicates()
@@ -732,3 +755,7 @@ class TimeseriesProcessor(DataProcessor):
         timeseries['hour'] = ((timeseries['hour_admitted']+hours_since_admission) % 24)/24
 
         return timeseries.drop(columns='hour_admitted')
+
+    def get_stay_chunks(self):
+        return np.array_split(self.stays, self.stays.size//self.n_patient_chunk)
+        

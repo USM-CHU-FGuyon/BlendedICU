@@ -1,6 +1,5 @@
-from functools import partial
-
 import pandas as pd
+import polars as pl
 
 from database_processing.datapreparator import DataPreparator
 from database_processing.medicationprocessor import MedicationProcessor
@@ -39,15 +38,12 @@ class eicuPreparator(DataPreparator):
         self.aperiodic_pth = self.source_pth+aperiodic_pth
         self.intakeoutput_pth = self.source_pth+intakeoutput_pth
         
-        suffix = f'_{self.n_patient_chunk}_patient_chunks/'
-
-        self.diag_savepath = f'{self.savepath}/diagnoses.parquet'
-        self.lab_savepath = f'{self.savepath}/tslab{suffix}'
-        self.resp_savepath = f'{self.savepath}/tsresp{suffix}'
-        self.nurse_savepath = f'{self.savepath}/tsnurse{suffix}'
-        self.periodic_savepath = f'{self.savepath}/tsperiodic{suffix}'
-        self.aperiodic_savepath = f'{self.savepath}/tsaperiodic{suffix}'
-        self.intakeoutput_savepath = f'{self.savepath}/tsintakeoutput{suffix}'
+        self.intakeoutput_pl_savepath = f'{self.savepath}/tsintakeoutput.parquet'
+        self.lab_pl_savepath = f'{self.savepath}/lab.parquet'
+        self.aperiodic_pl_savepath = f'{self.savepath}/tsaperiodic.parquet'
+        self.nursecharting_pl_savepath = f'{self.savepath}/tsnurse/'
+        self.tsresp_pl_savepath = f'{self.savepath}/tsresp.parquet'
+        self.tsperiodic_pl_savepath = f'{self.savepath}/tsperiodic/'
 
         self.col_los = 'unitdischargeoffset'
         self.unit_los = 'minute'
@@ -81,7 +77,7 @@ class eicuPreparator(DataPreparator):
         Medication can be found in three separate tables. 
         """
         print('o Medication')
-        self.get_labels()
+        self.get_labels(lazy=True)
         self.admissiondrug = pd.read_csv(self.admissiondrug_pth,
                                          usecols=['patientunitstayid',
                                                   'drugoffset',
@@ -105,7 +101,7 @@ class eicuPreparator(DataPreparator):
                                         self.admissiondrug])
 
         self.mp = MedicationProcessor(self.dataset,
-                                      self.labels,
+                                      self.labels.collect().to_pandas(),
                                       col_med='drugname',
                                       col_time='drugoffset',
                                       col_pid='patientunitstayid',
@@ -181,22 +177,12 @@ class eicuPreparator(DataPreparator):
 
         return self.save(diagnoses, self.diag_savepath)
 
-    def gen_timeserieslab(self):
-        """
-        The lab table fits in memory so it is processed all at once.
-        To ease further processing, the processed table are saved into chunks 
-        of 1_000 patients (by default).
-        A set of variables, listed in keepvars are given for reducing memory
-        usage.
-        """
-        print('o Timeserieslab')
-        self.get_labels()
-        lab = pd.read_csv(self.lab_pth,
-                          usecols=['patientunitstayid',
-                                   'labname',
-                                   'labresultoffset',
-                                   'labresult'])
 
+    def gen_timeserieslab(self):
+        print('o Timeserieslab')
+        self.get_labels(lazy=True)
+        lab = pl.read_csv(self.lab_pth).lazy()
+        
         keepvars = [
             'PT - INR', 'magnesium', 'PT', 'pH', 'MCH', 'BUN', 'HCO3',
             'lactate', 'PTT', 'FiO2', '-lymphs', 'chloride', 'troponin - I',
@@ -207,97 +193,107 @@ class eicuPreparator(DataPreparator):
             'AST (SGOT)', 'glucose', 'total protein', 'sodium', 'albumin',
             'bedside glucose', 'urinary specific gravity', 'Base Excess',
             'O2 Sat (%)', 'MPV']
+        
+        df = (lab
+              .select(['patientunitstayid',
+                          'labname',
+                          'labresultoffset',
+                          'labresult'])
+              .pipe(self.pl_prepare_tstable,
+                    keepvars=keepvars,
+                    col_offset='labresultoffset',
+                    col_variable='labname',
+                    unit_offset='minute',
+                    unit_los='minute',
+                    col_value='labresult')
+              .collect())
+        self.save(df, self.lab_pl_savepath)
 
-        self.tslab = self.prepare_tstable(lab,
-                                          keepvars=keepvars,
-                                          col_offset='labresultoffset',
-                                          col_variable='labname',
-                                          unit_offset='minute')
-
-        self.split_and_save_chunks(self.tslab, self.lab_savepath)
 
     def gen_timeseriesintakeoutput(self):
-        """
-        The table is processed all at once and saved by chunks, see tslab.
-        """
         print('o Timeseries Intakeoutput')
-        self.get_labels()
-        intakeoutput = pd.read_csv(self.intakeoutput_pth,
-                                   usecols=['patientunitstayid',
-                                            'celllabel',
-                                            'intakeoutputoffset',
-                                            'cellvaluenumeric'])
-
-        self.intakeout = self.prepare_tstable(intakeoutput,
-                                              col_offset='intakeoutputoffset',
-                                              col_variable='celllabel',
-                                              unit_offset='minute')
-
-        self.split_and_save_chunks(self.intakeout, self.intakeoutput_savepath)
-
+        self.get_labels(lazy=True)
+        intakeoutput = pl.read_csv(self.intakeoutput_pth).lazy()
+        
+        self.intakeout = (intakeoutput.select(['patientunitstayid',
+                                               'celllabel',
+                                               'intakeoutputoffset',
+                                               'cellvaluenumeric'])
+                                      .pipe(self.pl_prepare_tstable,
+                                            col_offset='intakeoutputoffset',
+                                            col_variable='celllabel',
+                                            unit_offset='minute',
+                                            unit_los='minute',
+                                            col_value='cellvaluenumeric')
+                                      .collect()
+                                      )
+        self.save(self.intakeout, self.intakeoutput_pl_savepath)
+        
     def gen_timeseriesresp(self):
-        """
-        The table is processed all at once and saved by chunks, see tslab.
-        Some percentages (eg. FiO2) are often written '80%', the % sign is 
-        removed before conversion to numeric.
-        """
-        self.get_labels()
+        self.get_labels(lazy=True)
         print('o Timeseriesresp')
-        respiratorycharting = pd.read_csv(self.respiratorycharting_pth,
-                                          usecols=['patientunitstayid',
-                                                   'respchartoffset',
-                                                   'respchartvaluelabel',
-                                                   'respchartvalue'])
-
+        respiratorycharting = pl.read_csv(self.respiratorycharting_pth).lazy()
+        
         keepvars = ['FiO2', 'Total RR', 'Vent Rate', 'Tidal Volume (set)',
                     'TV/kg IBW', 'Mechanical Ventilator Mode',
                     'PEEP', 'Plateau Pressure', 'LPM O2', 'Pressure Support',
                     'Peak Insp. Pressure', 'RR (patient)',
                     'Exhaled TV (patient)',
                     'Mean Airway Pressure', 'Exhaled MV', 'SaO2']
+        
+        tsresp = (respiratorycharting
+                  .select('patientunitstayid',
+                          'respchartoffset',
+                          'respchartvaluelabel',
+                          'respchartvalue')
+                  .pipe(self.pl_prepare_tstable,
+                        keepvars=keepvars,
+                        col_offset='respchartoffset',
+                        col_variable='respchartvaluelabel',
+                        unit_offset='minute',
+                        unit_los='minute',
+                        cast_to_float=False,
+                        additional_expr=[(pl.col('respchartvalue')
+                                          .str.replace('%', '')
+                                          .cast(pl.Float32(), strict=False))])
+                  .collect()
+                 )
+        
+        self.save(tsresp, self.tsresp_pl_savepath)
 
-        self.tsresp = respiratorycharting.pipe(self.prepare_tstable,
-                                               keepvars=keepvars,
-                                               col_offset='respchartoffset',
-                                               col_variable='respchartvaluelabel',
-                                               unit_offset='minute')
-                       
-        self.tsresp['respchartvalue'] = (self.tsresp['respchartvalue']
-                                         .str.replace('%', '')
-                                         .pipe(pd.to_numeric,
-                                               errors='coerce')
-                                         .fillna(self.tsresp['respchartvalue'])
-                                         .astype(str))
-
-        self.split_and_save_chunks(self.tsresp,  self.resp_savepath)
 
     def gen_timeseriesnurse(self):
-        """
-        The table is processed all at once and saved by chunks, see tslab.
-        """
-        self.get_labels()
+        self.get_labels(lazy=True)
         print('o Timeseriesnurse')
-        nursecharting = pd.read_csv(self.nursecharting_pth,
-                                    usecols=['patientunitstayid',
-                                             'nursingchartoffset',
-                                             'nursingchartcelltypevallabel',
-                                             'nursingchartvalue'])
-
+        nursecharting_batched = pd.read_csv(self.nursecharting_pth,
+                                    chunksize=self.chunksize)
+        
         keepvars = ['Non-Invasive BP', 'Heart Rate', 'Pain Score/Goal',
                     'Respiratory Rate', 'O2 Saturation', 'Temperature',
                     'Glasgow coma score', 'Invasive BP', 'Bedside Glucose',
                     'O2 L/%',
                     'O2 Admin Device', 'Sedation Scale/Score/Goal',
                     'Delirium Scale/Score']
+        
+        for i, nursecharting in enumerate(nursecharting_batched):
+            lf = pl.LazyFrame(nursecharting)
+        
+            df = (lf
+                  .select('patientunitstayid',
+                           'nursingchartoffset',
+                           'nursingchartcelltypevallabel',
+                           'nursingchartvalue')
+                  .pipe(self.pl_prepare_tstable,
+                        keepvars=keepvars,
+                        col_offset='nursingchartoffset',
+                        col_variable='nursingchartcelltypevallabel',
+                        unit_offset='minute',
+                        unit_los='minute',
+                        col_value='nursingchartvalue')
+                  .collect())
+            
+            self.save(df, self.nursecharting_pl_savepath+f'{i}.parquet')
 
-        tsnurse = (nursecharting.pipe(self.prepare_tstable,
-                                      keepvars=keepvars,
-                                      col_offset='nursingchartoffset',
-                                      col_variable='nursingchartcelltypevallabel',
-                                      unit_offset='minute')
-                   .astype({'nursingchartvalue': str}))
-
-        self.split_and_save_chunks(tsnurse, self.nurse_savepath)
 
     def gen_timeseriesaperiodic(self):
         """
@@ -305,46 +301,67 @@ class eicuPreparator(DataPreparator):
         processing step.
         The table is processed all at once and saved by chunks, see tslab.
         """
-        self.get_labels()
+        self.get_labels(lazy=True)
         print('o Timeseriesaperiodic')
-        vitalaperiodic = pd.read_csv(self.aperiodic_pth,
-                                     usecols=['patientunitstayid',
-                                              'observationoffset',
-                                              'noninvasivesystolic',
-                                              'noninvasivediastolic',
-                                              'noninvasivemean'])
+        vitalaperiodic = pl.read_csv(self.aperiodic_pth).lazy()
+        numeric_cols =['noninvasivesystolic',
+                       'noninvasivediastolic',
+                       'noninvasivemean']
+        
+        df = (vitalaperiodic.select(['patientunitstayid',
+                                     'observationoffset',
+                                     *numeric_cols
+                                     ])
+             .pipe(self.pl_prepare_tstable,
+                   col_offset='observationoffset',
+                   unit_offset='minute',
+                   cast_to_float=False,
+                   additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
+                                    for col in numeric_cols])
+             .collect())
+        
+        self.save(df, self.aperiodic_pl_savepath)
 
-        tsaperiodic = self.prepare_tstable(vitalaperiodic,
-                                           col_offset='observationoffset',
-                                           unit_offset='minute')
-
-        self.split_and_save_chunks(tsaperiodic, self.aperiodic_savepath)
 
     def gen_timeseriesperiodic(self):
-        """
-        This table is too large to be processed at once. It is processed and 
-        saved by chunks of 1000 patients (by default).
-        """
-        self.get_labels()
+        '''
+        As of polars 0.20 there is no support for reading csv.gz by chunks.
+        We load the files in pandas and convert them to lazyframes for 
+        unified processing. 
+        
+        This should be changed to full polars when the feature is up.
+        
+        '''
+        self.get_labels(lazy=True)
         print('o Timeseriesperiodic')
-        vitalperiodic = pd.read_csv(self.periodic_pth,
+        numeric_cols = ['temperature',
+                        'sao2',
+                        'heartrate',
+                        'respiration',
+                        'cvp',
+                        'systemicsystolic',
+                        'systemicdiastolic',
+                        'systemicmean',
+                        'st1', 'st2', 'st3']
+        
+        vitalperiodic_batched = pd.read_csv(self.periodic_pth,
                                     chunksize=self.chunksize,
                                     usecols=['patientunitstayid',
                                              'observationoffset',
-                                             'temperature',
-                                             'sao2',
-                                             'heartrate',
-                                             'respiration',
-                                             'cvp',
-                                             'systemicsystolic',
-                                             'systemicdiastolic',
-                                             'systemicmean',
-                                             'st1', 'st2', 'st3'])
-
-        prepare_tstable = partial(self.prepare_tstable,
-                                  col_offset='observationoffset',
-                                  unit_offset='minute')
-
-        df_tsp = pd.concat(map(prepare_tstable, vitalperiodic))
-
-        self.split_and_save_chunks(df_tsp, self.periodic_savepath)
+                                             *numeric_cols])
+        
+        for i, bach_df in enumerate(vitalperiodic_batched):
+            lf = pl.LazyFrame(bach_df)
+            
+            lf = (lf
+                  .pipe(self.pl_prepare_tstable,
+                        col_offset='observationoffset',
+                        unit_offset='minute',
+                        unit_los='minute',
+                        cast_to_float=False,
+                        additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
+                                         for col in numeric_cols])
+                  .collect())
+            
+            self.save(lf, self.tsperiodic_pl_savepath+f'{i}.parquet')
+        

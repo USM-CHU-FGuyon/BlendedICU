@@ -9,7 +9,7 @@ from hirid_preprocessing.flat_and_labels import Hir_FLProcessing
 from hirid_preprocessing.timeseries import hiridTSP
 
 tsp = hiridTSP(
-    ts_chunks='timeseries_1000_patient_chunks/',
+    ts_chunks='timeseries.parquet',
     pharma_chunks='pharma_1000_patient_chunks/')
 
 tsp.run(reset_dir=False)

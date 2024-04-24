@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
 from database_processing.dataprocessor import DataProcessor
 
@@ -71,7 +72,7 @@ class FlatAndLabelsProcessor(DataProcessor):
         index_pths = [f'{f}/index.csv' for f in ts_dir.glob(regex) if f.is_dir()]
         index_dfs = [pd.read_csv(pth, sep=';', index_col='patient') for pth in index_pths]
         index_df = pd.concat(index_dfs)
-        return sorted(index_df.index)
+        return sorted(np.unique(index_df.index))
 
     def run_labels(self):
         self.labels = self.preprocess_labels()

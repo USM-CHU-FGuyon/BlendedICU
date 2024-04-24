@@ -265,7 +265,7 @@ class CDMTables:
 
     @staticmethod
     def _care_site_schema():
-        schema = pa.schema([('care_site_id', pa.int32()),
+        schema = pa.schema([('care_site_id', pa.int64()),
                             ('care_site_name', pa.string()),
                             ('place_of_service_concept_id', pa.int32()),
                             ('location_id', pa.int32()),

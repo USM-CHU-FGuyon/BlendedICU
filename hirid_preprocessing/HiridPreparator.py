@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
@@ -26,14 +27,14 @@ class hiridPreparator(DataPreparator):
         
         self._check_files_untarred()
         
-        self.ts_savepth = self.savepath+'/timeseries_1000_patient_chunks/'
+        self.ts_savepth = self.savepath + 'timeseries.parquet'
         self.pharma_savepth = self.savepath+'/pharma_1000_patient_chunks/'
         self.id_mapping = self._variablenames_mapping()
 
         self.weights = None
         self.heights = None
         
-        self.admissions = self._load_admissions()
+        self.lazyadmissions, self.admissions = self._load_admissions()
 
     def _check_files_untarred(self):
         '''Checks that files were properly untarred at step 0.'''
@@ -70,39 +71,32 @@ class hiridPreparator(DataPreparator):
     def _load_los(self):
         """
         As is usually done with this database, the length of stay is defined as
-        the last timeseries medurement of a patient.
+        the last timeseries measurement of a patient.
         """
-        timeseries = pd.read_parquet(self.imputedstage_path,
-                                     columns=['patientid', 'reldatetime'])
+        timeseries = pl.scan_parquet(self.imputedstage_path+'*.parquet')
 
-        timeseries = timeseries.dropna().astype({'patientid': int})
-
-        timeseries['reldatetime'] = pd.to_numeric(timeseries['reldatetime'],
-                                                  errors='coerce')
-        los = (timeseries.dropna()
-               .rename(columns={'patientid': 'admissionid',
-                                'reldatetime': 'lengthofstay'})
-               .groupby('admissionid')
-               .lengthofstay
-               .max())
+        los = (timeseries
+             .select('patientid', 'reldatetime')
+             .drop_nulls()
+             .rename({'patientid': 'admissionid',
+                      'reldatetime': 'lengthofstay'})
+             .group_by('admissionid')
+             .max())
+                
         return los
-
+        
+    
     def _load_admissions(self):
-
-        adm = pd.read_csv(self.admissions_path)
-
-        adm = adm.rename(columns={'patientid': 'admissionid'})
-
-        adm['admissiontime'] = pd.to_datetime(adm['admissiontime'],
-                                              errors='coerce')
-
-        adm['admissionid'] = pd.to_numeric(adm['admissionid'],
-                                           errors='coerce')
-
-        adm = (adm.dropna(subset=['admissiontime', 'admissionid'])
-                  .astype({'admissionid': int,
-                           'age': int}))
-        return adm
+        adm = pl.scan_csv(self.admissions_path)
+        
+        adm = (adm
+               .rename({'patientid': 'admissionid'})
+               .with_columns(
+                   admissiontime=pl.col('admissiontime').str.to_datetime(),
+                   admissionid=pl.col('admissionid').cast(pl.Int32())
+                   )
+               )
+        return adm, adm.collect().to_pandas()
 
     def _variablenames_mapping(self):
         variable_ref = pd.read_csv(self.variable_ref_path,
@@ -133,48 +127,47 @@ class hiridPreparator(DataPreparator):
                 'pharma': pharma_id_mapping}
 
     def _load_heights_weights(self):
-        """
-        Fetches the admission height and weight to fill the labels table.
-        The filled heights and weights are those that were available at 
-        self.flat_hr_from_adm hours after admission.
-        """
-        print('Fecting heights and weights from timesersies tables, this may '
-              'take several minutes...')
+        print('Fetching heights and weights in timeseries data, this will '
+              'takes several minutes.')
         variables = {'weight': 10000400,
                      'height': 10000450}
-
-        ts_chunks = self._load_ts_chunks()
-
-        heights, weights = [], []
-        for i, chunk in enumerate(ts_chunks):
-            print(f'Read {(i+1)*self.chunksize} lines from observation table...')
-            chunk = (chunk.rename(columns={'datetime': 'valuedate',
-                                           'patientid': 'admissionid'})
-                     .merge(self.admissions[['admissiontime', 'admissionid']],
-                            on='admissionid')
-                     .pipe(self.compute_offset,
-                           col_intime='admissiontime',
-                           col_measuretime='valuedate'))
-
-            h_idx = chunk.variableid == variables['height']
-            w_idx = chunk.variableid == variables['weight']
-
-            time_idx = chunk.valuedate < self.flat_hr_from_adm.total_seconds()
-            heights.append(chunk.loc[h_idx & time_idx,
-                           ['admissionid', 'value']])
-            weights.append(chunk.loc[w_idx & time_idx,
-                           ['admissionid', 'value']])
-
-        df_heights = (pd.concat(heights)
-                        .rename(columns={'value': 'height'})
-                        .groupby('admissionid')
-                        .mean())
-        df_weights = (pd.concat(weights)
-                        .rename(columns={'value': 'weight'})
-                        .groupby('admissionid')
-                        .mean())
-        self.weights = df_weights
-        self.heights = df_heights
+        
+        ts = pl.scan_parquet(self.ts_path+'*.parquet')
+        
+        df = (ts
+             .select(['datetime',
+                     'patientid',
+                     'value',
+                     'variableid'])
+             .rename({'datetime': 'valuedate',
+                      'patientid': 'admissionid'})
+             .filter((pl.col('variableid')==variables['height']) 
+                     | (pl.col('variableid')==variables['weight']))
+             .join(self.lazyadmissions.select(['admissiontime', 'admissionid']),
+                   on='admissionid')
+             .with_columns(
+                 valuedate = pl.col('valuedate') - pl.col('admissiontime')
+                 )
+             .filter(pl.col('valuedate')<pl.duration(seconds=self.flat_hr_from_adm.total_seconds()))
+             .drop('valuedate', 'admissiontime')
+             .group_by('admissionid', 'variableid')
+             .mean()
+             .collect(streaming=True))
+        
+        partitions = df.partition_by(['variableid'], as_dict=True)
+        
+        weights = (partitions[variables['weight'],]
+                           .rename({'value': 'weight'})
+                           .drop('variableid')
+                           .lazy())
+        
+        heights = (partitions[variables['height'],]
+                           .rename({'value': 'height'})
+                           .drop('variableid')
+                           .lazy())
+        
+        print('  -> Done')
+        return heights, weights
 
     def _build_patient_chunk(self,
                              start,
@@ -199,8 +192,7 @@ class hiridPreparator(DataPreparator):
         for k, table in enumerate(chunk_loader()):
             table = table.rename(columns=rename_dic)
 
-            table[numcols] = table[numcols].apply(
-                pd.to_numeric, errors='coerce')
+            table[numcols] = table[numcols].apply(pd.to_numeric, errors='coerce')
 
             table = (table.dropna(subset=numcols)
                      .astype({itemid_label: int,
@@ -231,52 +223,45 @@ class hiridPreparator(DataPreparator):
         lengthsofstay = self._load_los()
 
         if (self.heights is None) or (self.weights is None):
-            self._load_heights_weights()
+            self.heights, self.weights = self._load_heights_weights()
 
-        admissions = (self.admissions.merge(self.heights,
-                                            left_on='admissionid',
-                                            right_index=True,
-                                            how='left')
-                                     .merge(self.weights,
-                                            left_on='admissionid',
-                                            right_index=True,
-                                            how='left')
-                                     .merge(lengthsofstay,
-                                            left_on='admissionid',
-                                            right_index=True))
-        admissions['care_site'] = 'Bern University Hospital'
+        admissions = (self.lazyadmissions
+                      .join(self.heights, on='admissionid', how='left')
+                      .join(self.weights, on='admissionid', how='left')
+                      .join(lengthsofstay, on='admissionid', how='left')
+                      .with_columns(
+                          care_site=pl.lit('Bern University Hospital')
+                          )
+                      .collect())
+
         self.save(admissions, self.savepath+'labels.parquet')
 
     def gen_timeseries(self):
-        """
-        The timeseries table is too large to be loaded in memory. 
-        The icu stays are not ordered in the table. 
-        To create a chunk of 1000 patient, we must go through the whole file. 
-        Consequently, this processing step is longer than other databases.
-        """
-        self.reset_chunk_idx()
-        self.get_labels()
-        for start in range(0, len(self.stays), self.n_patient_chunk):
-
-            chunk = self._build_patient_chunk(
-                                    start,
-                                    chunk_loader=self._load_ts_chunks,
-                                    rename_dic={'datetime': 'offset'},
-                                    itemid_label='variableid',
-                                    value_label='value',
-                                    id_mapping=self.id_mapping['observation'])
-
-            self.chunk = self.prepare_tstable(chunk,
-                                              col_offset='offset',
-                                              col_intime='admissiontime')
-
-            self.save_chunk(self.chunk, self.ts_savepth)
-
+        self.get_labels(lazy=True)
+        ts = pl.scan_parquet(self.ts_path+'/*.parquet')
+        
+        df = (ts
+              .select(['datetime', 'patientid', 'value', 'variableid'])
+              .with_columns(pl.col('patientid').alias(self.col_stayid))
+              .pipe(self.pl_prepare_tstable, 
+                    itemid_label='variableid',
+                    col_intime='admissiontime',
+                    col_measuretime='datetime',
+                    id_mapping=self.id_mapping['observation'],
+                    col_value='value',
+                    )
+              .collect(streaming=True)
+              )
+        
+        self.save(df, self.ts_savepth)
+        return df
+    
     def gen_medication(self):
         """
         Similary to the timeseries table, the patients are not ordered in the 
         raw files. the _build_patient_chunk goes through the whole table to
         extract data from a chunk of patients.
+        TODO : to polars !
         """
         self.reset_chunk_idx()
         self.get_labels()

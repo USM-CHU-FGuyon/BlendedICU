@@ -1,4 +1,5 @@
 import pandas as pd
+import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
@@ -16,7 +17,7 @@ class AmsterdamPreparator(DataPreparator):
         self.numericitems_pth = self.source_pth+numericitems_pth
         self.listitems_pth = self.source_pth+listitems_pth
 
-        self.ts_savepath = f'{self.savepath}/numericitems_{self.n_patient_chunk}_patient_chunks/'
+        self.ts_savepath = f'{self.savepath}/numericitems/'
         self.listitems_savepath = f'{self.savepath}/listitems.parquet'
         self.gcs_savepath = f'{self.savepath}/glasgow_coma_scores.parquet'
         self.col_los = 'lengthofstay'
@@ -25,7 +26,6 @@ class AmsterdamPreparator(DataPreparator):
     def gen_labels(self):
         print('Labels...')
         admissions = pd.read_csv(self.admission_pth,
-                                 compression='gzip',
                                  encoding='ISO-8859-1')
         admissions['care_site'] = 'Amsterdam University medical center'
         return self.save(admissions, self.labels_savepath)
@@ -58,9 +58,8 @@ class AmsterdamPreparator(DataPreparator):
         A separate file is saved for the computed Glasgow coma scores.
         """
         print('Listitems ts...')
-        self.get_labels()
+        self.get_labels(lazy=True)
         listitems = pd.read_csv(self.listitems_pth,
-                                compression='gzip',
                                 encoding='ISO-8859-1',
                                 usecols=['admissionid',
                                          'item',
@@ -69,15 +68,21 @@ class AmsterdamPreparator(DataPreparator):
                                          'valueid',
                                          'measuredat'])
 
-        listitems = self.prepare_tstable(listitems,
+        lazylistitems = pl.LazyFrame(listitems)
+
+        df_listitems = lazylistitems.pipe(self.pl_prepare_tstable,
                                          col_offset='measuredat',
                                          col_variable='item',
-                                         unit_offset='milisecond')
-
-        df_gcs = self._compute_gcs(listitems)
-        listitems = listitems.drop(columns=['valueid', 'itemid'])
+                                         col_value='value',
+                                         unit_offset='millisecond',
+                                         unit_los='hour').collect()
+        
+        df_gcs = self._compute_gcs(df_listitems.to_pandas())
+        
+        df_listitems = df_listitems.drop('valueid', 'itemid')
+        
         self.save(df_gcs, self.gcs_savepath)
-        self.save(listitems, self.listitems_savepath)
+        self.save(df_listitems, self.listitems_savepath)
 
     def _compute_gcs(self, df):
         """
@@ -85,7 +90,7 @@ class AmsterdamPreparator(DataPreparator):
         They can be computed. See the sql file on he Amsterdam GitHub:
         https://github.com/AmsterdamUMC/AmsterdamUMCdb/blob/master/amsterdamumcdb/sql/common/gcs.sql
         """
-        df = df.set_index(["admissionid", "measuredat"])[['valueid', 'itemid']]
+        df = df.set_index(["admissionid", self.col_offset])[['valueid', 'itemid']]
 
         df_eye = df.loc[df.itemid.isin([6732, 13077, 14470, 16628, 19635, 19638]), :].copy()
         df_motor = df.loc[df.itemid.isin([6734, 13072, 14476, 16634, 19636, 19639]), :].copy()
@@ -129,7 +134,7 @@ class AmsterdamPreparator(DataPreparator):
         numericitems table are ordered.
         """
         print('numericitems ts...')
-        self.get_labels()
+        self.get_labels(lazy=True)
 
         df_chunks = pd.read_csv(self.numericitems_pth,
                                 compression='gzip',
@@ -140,19 +145,13 @@ class AmsterdamPreparator(DataPreparator):
                                          'value',
                                          'measuredat'])
 
-        df = pd.DataFrame()
-        for chunk in df_chunks:
-            chunk = self.prepare_tstable(chunk,
+        for i, chunk in enumerate(df_chunks):
+            chunk = pl.LazyFrame(chunk)
+            df = (chunk.pipe(self.pl_prepare_tstable,
                                          col_offset='measuredat',
                                          col_variable='item',
-                                         unit_offset='milisecond')
-
-            df = pd.concat([df, chunk])
-            patients = df.admissionid.unique()
-            while len(patients) > self.n_patient_chunk:
-                patient_chunk = patients[:self.n_patient_chunk]
-                save_idx = df.admissionid.isin(patient_chunk)
-
-                self.save_chunk(df.loc[save_idx], self.ts_savepath)
-                df = df.loc[~save_idx]
-                patients = df.admissionid.unique()
+                                         col_value='value',
+                                         unit_offset='millisecond',
+                                         unit_los='hour')
+                  .collect())
+            self.save(df, self.ts_savepath+f'{i}.parquet')

@@ -249,7 +249,7 @@ class OMOP_converter(blendedicuTSP):
         
     def visit_occurrence_table(self):
         print('Visit Occurrence...')
-        visit_occurrence = cdm.tables['VISIT_OCCURRENCE']
+        visit_occurrence = cdm.tables['VISIT_OCCURRENCE'].copy()
 
         visit_occurrence['_source_person_id'] = self.labels.uniquepid
         visit_occurrence['_source_visit_id'] = self.labels.patient
@@ -488,7 +488,12 @@ class OMOP_converter(blendedicuTSP):
                                   .to_dict()['location_id'])
 
         care_site['location_id'] = care_site['care_site_name'].map(self.locationid_mapper).astype(int)
-        care_site['care_site_id'] = self.start_index['care_site'] + np.arange(len(care_site))
+        
+        unique_key_cols = ['care_site_name', 'place_of_service_source_value']
+        
+        care_site['care_site_id'] = self._create_id(care_site,
+                                                    unique_key_cols,
+                                                    prefix=6)
         
         self.care_site = care_site
 
