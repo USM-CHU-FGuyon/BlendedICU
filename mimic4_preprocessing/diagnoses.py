@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 from database_processing.diagnosesprocessor import DiagnosesProcessor
@@ -8,7 +7,7 @@ class mimic4_DiagProcessor(DiagnosesProcessor):
         super().__init__(dataset='mimic4')
         self.diagnoses = self.load(self.diag_savepath)
         
-    def run(self, ):
+    def run(self):
         
         self.diagnoses['icd_code'] = self.diagnoses['icd_version'].astype(str)+'_'+self.diagnoses['icd_code']
         
@@ -16,7 +15,7 @@ class mimic4_DiagProcessor(DiagnosesProcessor):
                      .rename(columns={'subject_id': self.uniquepid_col,
                                       'stay_id': self.idx_col})
                      .assign(
-                       patient=lambda x: np.NaN,
+                       patient=lambda x: self.dataset+'-'+x[self.idx_col].astype(str),
                        diagnosis_name=lambda x: x.icd_code.map(self.diag_mapping),
                        diagnosis_concept_id=lambda x: x.diagnosis_name.map(self.diag_concept_id),
                        diagnosis_source_value=lambda x: x.long_title)
@@ -31,7 +30,9 @@ class mimic4_DiagProcessor(DiagnosesProcessor):
                         .astype({'hadm_id': int}))
         
         diagnoses = (diagnoses
-                     .merge(self.labels[['hadm_id', 'outtime']], on='hadm_id')
+                     .merge(self.labels['outtime'],
+                            left_on=self.idx_col,
+                            right_index=True)
                      .rename(columns={'outtime': 'diagnosis_start'}))
         
         self.save(diagnoses, self.preprocessed_diagnoses_pth)

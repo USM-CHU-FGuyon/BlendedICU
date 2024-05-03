@@ -187,12 +187,16 @@ class mimic4Preparator(DataPreparator):
         return df_inputevents
         
     def gen_diagnoses(self):
+        icustays = self.icustays.lazy().select('stay_id', 'hadm_id')
         diagnoses = pl.scan_parquet(self.diagnoses_pth)
         d_diagnoses = pl.scan_parquet(self.ddiagnoses_pth)
     
         df_diagnoses = (diagnoses
+                        .join(icustays,
+                              left_on='hadm_id',
+                              right_on='hadm_id')
                         .select(['subject_id',
-                                 'hadm_id',
+                                 'stay_id',
                                  'icd_code',
                                  'icd_version'])
                         .join(d_diagnoses.select(['icd_code',
