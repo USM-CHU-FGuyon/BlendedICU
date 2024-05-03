@@ -1,6 +1,9 @@
 from pathlib import Path
 
 import polars as pl
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from database_processing.dataprocessor import DataProcessor
 
@@ -13,6 +16,13 @@ class DataPreparator(DataProcessor):
         self.chunksize = 10_000_000  # chunksize in csv reader
         self.inch_to_cm = 2.54
         self.lbs_to_kg = 0.454
+
+    @staticmethod
+    def _get_name_as_parquet(pth):
+        pth = Path(pth).name
+        extensions = "".join(Path(pth).suffixes)
+        pth = pth.removesuffix(extensions)
+        return pth + '.parquet'
 
     def _clip_time(self, df, col_offset='resultoffset'):
         idx = ((df[col_offset] < df[self.col_los])
@@ -36,8 +46,22 @@ class DataPreparator(DataProcessor):
         if self.labels is None:
             raise ValueError('Run gen_labels first !')
 
+    @staticmethod
+    def write_as_parquet(pth_src, pth_tgt, astype_dic={}, chunksize=1e6):
+        print(f'Writing {pth_tgt}')
+        Path(pth_tgt).parent.mkdir(exist_ok=True)
+        df_chunks = pd.read_csv(pth_src, chunksize=chunksize)
+        for i, df in enumerate(df_chunks):
+            astype_dic = {k:v for k, v in astype_dic.items() if k in df.columns}
+            df = df.astype(astype_dic)
+            table = pa.Table.from_pandas(df)
+            if i == 0:
+                pqwriter = pq.ParquetWriter(pth_tgt, table.schema)            
+            pqwriter.write_table(table)
         
-
+        if pqwriter:
+            pqwriter.close()
+        print('  -> Done')
     def _to_seconds(self, df, col, unit='second'):
         k = {'day': 86400,
              'hour': 3600,

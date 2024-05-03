@@ -68,10 +68,6 @@ class eicuTSP(TimeseriesProcessor):
             'col_time': self.col_offset
         }
 
-    def _get_admission_hours(self):
-        self.flat['patient'] = (self.flat['patientunitstayid']
-                                    .apply(lambda x: f'{self.dataset}-{x}'))
-        return self.flat.loc[:, ['patient', 'hour']].set_index('patient')
 
     def _get_stays(self):
         return self.labels.select('patientunitstayid').unique().collect().to_numpy().flatten()
@@ -115,7 +111,6 @@ class eicuTSP(TimeseriesProcessor):
                            on=(self.idx_col, self.time_col),
                            how='outer_coalesce'))
 
-        admission_hours = self._get_admission_hours()
 
         for i, stay_chunk in enumerate(self.stay_chunks):
             
@@ -137,5 +132,4 @@ class eicuTSP(TimeseriesProcessor):
             self.process_tables(ts_ver,
                                 ts_hor,
                                 med=med,
-                                admission_hours=admission_hours,
                                 chunk_number=i)

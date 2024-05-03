@@ -4,7 +4,9 @@ This code extracts the data from the Amsterdam dataset
 
 It creates a set of .parquet files at the specified path 
 ('eicu' in paths.json). 
-Approximate running time: 20min.
+Approximate running time: 
+    * raw_tables_to_parquet()  12min #only run once. csv.gz -> parquet with no data changes.
+    * gen_* : 7min
 """
 from eicu_preprocessing.eicupreparator import eicuPreparator
 
@@ -23,6 +25,8 @@ eicu_prep = eicuPreparator(
     periodic_pth='vitalPeriodic.csv.gz',
     aperiodic_pth='vitalAperiodic.csv.gz',
     intakeoutput_pth='intakeOutput.csv.gz')
+
+eicu_prep.raw_tables_to_parquet()
 
 eicu_prep.gen_labels()
 eicu_prep.gen_flat()

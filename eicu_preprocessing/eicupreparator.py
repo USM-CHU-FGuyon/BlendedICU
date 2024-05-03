@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import polars as pl
 
@@ -38,17 +40,66 @@ class eicuPreparator(DataPreparator):
         self.aperiodic_pth = self.source_pth+aperiodic_pth
         self.intakeoutput_pth = self.source_pth+intakeoutput_pth
         
-        self.intakeoutput_pl_savepath = f'{self.savepath}/tsintakeoutput.parquet'
-        self.lab_pl_savepath = f'{self.savepath}/lab.parquet'
-        self.aperiodic_pl_savepath = f'{self.savepath}/tsaperiodic.parquet'
-        self.nursecharting_pl_savepath = f'{self.savepath}/tsnurse/'
-        self.tsresp_pl_savepath = f'{self.savepath}/tsresp.parquet'
-        self.tsperiodic_pl_savepath = f'{self.savepath}/tsperiodic/'
+        self.patient_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(patient_pth)
+        self.lab_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(lab_pth)
+        self.intakeoutput_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(intakeoutput_pth)
+        self.respiratorycharting_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(respiratorycharting_pth)
+        self.nursecharting_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(nursecharting_pth)
+        self.aperiodic_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(aperiodic_pth)
+        self.periodic_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(periodic_pth)
+        self.admissiondrug_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(admissiondrug_pth)
+        self.infusiondrug_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(infusiondrug_pth)
+        self.medication_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(medication_pth)
+        
+        self.intakeoutput_savepath = f'{self.savepath}/tsintakeoutput.parquet'
+        self.lab_savepath = f'{self.savepath}/lab.parquet'
+        self.aperiodic_savepath = f'{self.savepath}/tsaperiodic.parquet'
+        self.nursecharting_savepath = f'{self.savepath}/tsnurse.parquet'
+        self.tsresp_savepath = f'{self.savepath}/tsresp.parquet'
+        self.tsperiodic_savepath = f'{self.savepath}/tsperiodic.parquet'
 
         self.col_los = 'unitdischargeoffset'
         self.unit_los = 'minute'
 
-        self.patient = pd.read_csv(self.patient_pth)
+        self.patient = pl.scan_parquet(self.patient_parquet_pth)
+
+
+
+    def raw_tables_to_parquet(self):
+        """
+        Writes initial csv.gz files to parquet files. This operations 
+        needs only to be done once and allows further methods to be 
+        done laziy using polars.
+        """
+        for i, src_pth in enumerate([
+                self.patient_pth,
+                self.lab_pth,
+                self.physicalexam_pth,
+                self.respiratorycharting_pth,
+                self.medication_pth,
+                self.infusiondrug_pth,
+                self.admissiondrug_pth,
+                self.diag_pth,
+                self.pasthistory_pth,
+                self.admissiondx_pth,
+                self.nursecharting_pth,
+                self.periodic_pth,
+                self.aperiodic_pth,
+                self.intakeoutput_pth
+                ]):
+            tgt = self.raw_as_parquet_pth + self._get_name_as_parquet(src_pth)
+            
+            if Path(tgt).is_file() and i==0:
+                inp = input('Some parquet files already exist, skip conversion to parquet ?[n], y')
+                if inp.lower() == 'y':
+                    break
+            
+            self.write_as_parquet(src_pth,
+                                  tgt,
+                                  astype_dic={'respchartvalue': str,
+                                              'loadingdose': str,
+                                              'drugrate': str})
+            
 
     def _load_los(self, col_id, col_los):
         try:
@@ -57,17 +108,19 @@ class eicuPreparator(DataPreparator):
             return
 
     def gen_labels(self):
-        patient = self.patient.loc[:, ['uniquepid',
-                                       'patienthealthsystemstayid',
-                                       'patientunitstayid',
-                                       'unitvisitnumber',
-                                       'unitdischargelocation',
-                                       'unitdischargestatus',
-                                       'unitdischargeoffset',
-                                       'hospitalid',
-                                       'unittype']]
-        patient = (patient.dropna(subset=['unitdischargestatus'])
-                          .sort_values('patientunitstayid'))
+        patient = (self.patient
+                   .select('uniquepid',
+                           'patienthealthsystemstayid',
+                           'patientunitstayid',
+                           'unitvisitnumber',
+                           'unitdischargelocation',
+                           'unitdischargestatus',
+                           'unitdischargeoffset',
+                           'hospitalid',
+                           'unittype')
+                   .filter(~pl.all_horizontal(pl.col('unitdischargestatus').is_null()))
+                   .sort('patientunitstayid')
+                   .collect())
 
         self.save(patient, self.labels_savepath)
         self.labels = patient
@@ -78,27 +131,29 @@ class eicuPreparator(DataPreparator):
         """
         print('o Medication')
         self.get_labels(lazy=True)
-        self.admissiondrug = pd.read_csv(self.admissiondrug_pth,
-                                         usecols=['patientunitstayid',
-                                                  'drugoffset',
-                                                  'drugname'])
-        self.infusiondrug = pd.read_csv(self.infusiondrug_pth,
-                                        usecols=['patientunitstayid',
-                                                 'infusionoffset',
-                                                 'drugname'])
+        
+        admissiondrug = (pl.scan_parquet(self.admissiondrug_parquet_pth)
+                         .select('patientunitstayid',
+                                 'drugoffset',
+                                 'drugname'))
+        
+        infusiondrug = (pl.scan_parquet(self.infusiondrug_parquet_pth)
+                        .select('patientunitstayid',
+                                'infusionoffset',
+                                'drugname')
+                        .rename({"infusionoffset": "drugoffset"}))
 
-        self.medication_table = pd.read_csv(self.medication_pth,
-                                            usecols=['patientunitstayid',
-                                                     'drugstartoffset',
-                                                     'drugname'])
-
-        self.medication_in = pd.concat([self.infusiondrug
-                                        .rename(columns={'infusionoffset':
-                                                         'drugoffset'}),
-                                        self.medication_table
-                                        .rename(columns={'drugstartoffset':
-                                                         'drugoffset'}),
-                                        self.admissiondrug])
+        medication = (pl.scan_parquet(self.medication_parquet_pth)
+                      .select('patientunitstayid',
+                              'drugstartoffset',
+                              'drugname')
+                      .rename({'drugstartoffset': 'drugoffset'}))
+        
+        medication_in = (pl.concat([infusiondrug,
+                                   medication,
+                                   admissiondrug])
+                         .collect()
+                         .to_pandas())
 
         self.mp = MedicationProcessor(self.dataset,
                                       self.labels.collect().to_pandas(),
@@ -109,27 +164,25 @@ class eicuPreparator(DataPreparator):
                                       unit_offset='minute',
                                       unit_los='minute')
 
-        self.med = self.mp.run(self.medication_in)
+        self.med = self.mp.run(medication_in)
         return self.save(self.med, self.med_savepath)
 
     def gen_flat(self):
         print('o Flat features')
-        flat = self.patient.loc[:, ['patientunitstayid',
-                                    'gender',
-                                    'age',
-                                    'ethnicity',
-                                    'admissionheight',
-                                    'admissionweight',
-                                    'apacheadmissiondx',
-                                    'unitadmittime24',
-                                    'unittype',
-                                    'unitadmitsource',
-                                    'unitvisitnumber',
-                                    'unitstaytype', ]]
-
-        flat['hour'] = pd.to_datetime(flat['unitadmittime24']).dt.hour
-        flat = (flat.sort_values('patientunitstayid')
-                    .drop(columns=['unitadmittime24']))
+        flat = (self.patient
+                .select('patientunitstayid',
+                        'gender',
+                        'age',
+                        'ethnicity',
+                        'admissionheight',
+                        'admissionweight',
+                        'apacheadmissiondx',
+                        'unittype',
+                        'unitadmitsource',
+                        'unitvisitnumber',
+                        'unitstaytype')
+                .sort('patientunitstayid')
+                .collect())
 
         return self.save(flat, self.flat_savepath)
 
@@ -181,7 +234,7 @@ class eicuPreparator(DataPreparator):
     def gen_timeserieslab(self):
         print('o Timeserieslab')
         self.get_labels(lazy=True)
-        lab = pl.read_csv(self.lab_pth).lazy()
+        lab = pl.scan_parquet(self.lab_parquet_pth)
         
         keepvars = [
             'PT - INR', 'magnesium', 'PT', 'pH', 'MCH', 'BUN', 'HCO3',
@@ -207,13 +260,13 @@ class eicuPreparator(DataPreparator):
                     unit_los='minute',
                     col_value='labresult')
               .collect())
-        self.save(df, self.lab_pl_savepath)
+        self.save(df, self.lab_savepath)
 
 
     def gen_timeseriesintakeoutput(self):
         print('o Timeseries Intakeoutput')
         self.get_labels(lazy=True)
-        intakeoutput = pl.read_csv(self.intakeoutput_pth).lazy()
+        intakeoutput = pl.scan_parquet(self.intakeoutput_parquet_pth)
         
         self.intakeout = (intakeoutput.select(['patientunitstayid',
                                                'celllabel',
@@ -225,14 +278,14 @@ class eicuPreparator(DataPreparator):
                                             unit_offset='minute',
                                             unit_los='minute',
                                             col_value='cellvaluenumeric')
-                                      .collect()
-                                      )
-        self.save(self.intakeout, self.intakeoutput_pl_savepath)
+                                      .collect())
+        
+        self.save(self.intakeout, self.intakeoutput_savepath)
         
     def gen_timeseriesresp(self):
         self.get_labels(lazy=True)
         print('o Timeseriesresp')
-        respiratorycharting = pl.read_csv(self.respiratorycharting_pth).lazy()
+        respiratorycharting = pl.scan_parquet(self.respiratorycharting_parquet_pth)
         
         keepvars = ['FiO2', 'Total RR', 'Vent Rate', 'Tidal Volume (set)',
                     'TV/kg IBW', 'Mechanical Ventilator Mode',
@@ -256,17 +309,15 @@ class eicuPreparator(DataPreparator):
                         additional_expr=[(pl.col('respchartvalue')
                                           .str.replace('%', '')
                                           .cast(pl.Float32(), strict=False))])
-                  .collect()
-                 )
+                  .collect())
         
-        self.save(tsresp, self.tsresp_pl_savepath)
+        self.save(tsresp, self.tsresp_savepath)
 
 
     def gen_timeseriesnurse(self):
         self.get_labels(lazy=True)
         print('o Timeseriesnurse')
-        nursecharting_batched = pd.read_csv(self.nursecharting_pth,
-                                    chunksize=self.chunksize)
+        nursecharting = pl.scan_parquet(self.nursecharting_parquet_pth)
         
         keepvars = ['Non-Invasive BP', 'Heart Rate', 'Pain Score/Goal',
                     'Respiratory Rate', 'O2 Saturation', 'Temperature',
@@ -274,25 +325,22 @@ class eicuPreparator(DataPreparator):
                     'O2 L/%',
                     'O2 Admin Device', 'Sedation Scale/Score/Goal',
                     'Delirium Scale/Score']
+    
+        df = (nursecharting
+              .select('patientunitstayid',
+                       'nursingchartoffset',
+                       'nursingchartcelltypevallabel',
+                       'nursingchartvalue')
+              .pipe(self.pl_prepare_tstable,
+                    keepvars=keepvars,
+                    col_offset='nursingchartoffset',
+                    col_variable='nursingchartcelltypevallabel',
+                    unit_offset='minute',
+                    unit_los='minute',
+                    col_value='nursingchartvalue')
+              .collect())
         
-        for i, nursecharting in enumerate(nursecharting_batched):
-            lf = pl.LazyFrame(nursecharting)
-        
-            df = (lf
-                  .select('patientunitstayid',
-                           'nursingchartoffset',
-                           'nursingchartcelltypevallabel',
-                           'nursingchartvalue')
-                  .pipe(self.pl_prepare_tstable,
-                        keepvars=keepvars,
-                        col_offset='nursingchartoffset',
-                        col_variable='nursingchartcelltypevallabel',
-                        unit_offset='minute',
-                        unit_los='minute',
-                        col_value='nursingchartvalue')
-                  .collect())
-            
-            self.save(df, self.nursecharting_pl_savepath+f'{i}.parquet')
+        self.save(df, self.nursecharting_savepath)
 
 
     def gen_timeseriesaperiodic(self):
@@ -303,15 +351,14 @@ class eicuPreparator(DataPreparator):
         """
         self.get_labels(lazy=True)
         print('o Timeseriesaperiodic')
-        vitalaperiodic = pl.read_csv(self.aperiodic_pth).lazy()
+        vitalaperiodic = pl.scan_parquet(self.aperiodic_parquet_pth)
         numeric_cols =['noninvasivesystolic',
                        'noninvasivediastolic',
                        'noninvasivemean']
         
         df = (vitalaperiodic.select(['patientunitstayid',
                                      'observationoffset',
-                                     *numeric_cols
-                                     ])
+                                     *numeric_cols])
              .pipe(self.pl_prepare_tstable,
                    col_offset='observationoffset',
                    unit_offset='minute',
@@ -320,7 +367,7 @@ class eicuPreparator(DataPreparator):
                                     for col in numeric_cols])
              .collect())
         
-        self.save(df, self.aperiodic_pl_savepath)
+        self.save(df, self.aperiodic_savepath)
 
 
     def gen_timeseriesperiodic(self):
@@ -344,24 +391,20 @@ class eicuPreparator(DataPreparator):
                         'systemicmean',
                         'st1', 'st2', 'st3']
         
-        vitalperiodic_batched = pd.read_csv(self.periodic_pth,
-                                    chunksize=self.chunksize,
-                                    usecols=['patientunitstayid',
-                                             'observationoffset',
-                                             *numeric_cols])
+        vitalperiodic = pl.scan_parquet(self.periodic_parquet_pth)
         
-        for i, bach_df in enumerate(vitalperiodic_batched):
-            lf = pl.LazyFrame(bach_df)
-            
-            lf = (lf
-                  .pipe(self.pl_prepare_tstable,
-                        col_offset='observationoffset',
-                        unit_offset='minute',
-                        unit_los='minute',
-                        cast_to_float=False,
-                        additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
-                                         for col in numeric_cols])
-                  .collect())
-            
-            self.save(lf, self.tsperiodic_pl_savepath+f'{i}.parquet')
+        lf = (vitalperiodic
+              .select('patientunitstayid',
+                      'observationoffset',
+                      *numeric_cols)
+              .pipe(self.pl_prepare_tstable,
+                    col_offset='observationoffset',
+                    unit_offset='minute',
+                    unit_los='minute',
+                    cast_to_float=False,
+                    additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
+                                     for col in numeric_cols])
+              .collect(streaming=True))
         
+        self.save(lf, self.tsperiodic_savepath)
+    

@@ -11,9 +11,9 @@ from eicu_preprocessing.timeseries import eicuTSP
 tsp = eicuTSP(
     lab_pth='lab.parquet',
     resp_pth='tsresp.parquet',
-    nurse_pth='tsnurse/',
+    nurse_pth='tsnurse.parquet',
     aperiodic_pth='tsaperiodic.parquet',
-    periodic_pth='tsperiodic/',
+    periodic_pth='tsperiodic.parquet',
     inout_pth='tsintakeoutput.parquet')
 
 tsp.run(reset_dir=False)

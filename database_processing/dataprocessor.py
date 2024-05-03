@@ -27,6 +27,7 @@ class DataProcessor:
         self.labels_pths = {d: self._preprocessed_pth(d, 'labels') for d in self.datasets}
         self.diagnoses_pths = {d: self._preprocessed_pth(d, 'diagnoses') for d in self.datasets}
         self.savepath = self.data_pth + self._datadir_name()
+        self.raw_as_parquet_pth = self.savepath + '/raw_parquet/'
         self.aux_pth = self.pth_dic['auxillary_files']
         self.voc_pth = self.pth_dic['vocabulary']
         self.user_input_pth = self.pth_dic['user_input']

@@ -31,7 +31,7 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
         categorical_features = ['ethnicity', 'unittype', 'unitadmitsource',
                                 'unitvisitnumber', 'unitstaytype', ]
         features_for_min_max = ['admissionweight',
-                                'admissionheight', 'age', 'hour']
+                                'admissionheight', 'age']
         medianfill_cols = ['admissionheight', 'admissionweight']
 
         flat = (flat.pipe(self.categorical_dummies, cols=categorical_features)
