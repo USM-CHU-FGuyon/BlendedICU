@@ -66,7 +66,8 @@ class DataProcessor:
         self.upper_los = self.config['upper_los']['value']
         self.preadm_anteriority = self.config['preadm_anteriority']['value']
         self.drug_exposure_time = self.config['drug_exposure_time']['value']
-        self.flat_hr_from_adm = pd.to_timedelta(self.config['flat_hr_from_adm']['value'], unit='hour')
+        self.flat_hr_from_adm_int = self.config['flat_hr_from_adm']['value']
+        self.flat_hr_from_adm = pd.to_timedelta(self.flat_hr_from_adm_int, unit='hour')
         self.TS_FILL_MEDIAN = self.config['TS_FILL_MEDIAN']['value']
         self.TS_NORMALIZE = self.config['TS_NORMALIZE']['value']
         self.TS_CLIP = self.config['TS_CLIP']['value']

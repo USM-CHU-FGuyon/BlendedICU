@@ -11,7 +11,7 @@ from mimic4_preprocessing.timeseries import mimic4TSP
 
 tsp = mimic4TSP(
     med_pth='medication.parquet',
-    ts_pth='timeseries/',
+    ts_pth='timeseries.parquet',
     tslab_pth='timeserieslab.parquet',
     outputevents_pth='timeseriesoutputs.parquet')
 

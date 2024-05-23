@@ -1,4 +1,3 @@
-from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -11,30 +10,84 @@ from database_processing.datapreparator import DataPreparator
 class mimic4Preparator(DataPreparator):
     def __init__(self,
                  chartevents_pth,
-                 labevents_pth):
+                 labevents_pth,
+                 d_labitems_pth,
+                 admissions_pth,
+                 diagnoses_pth,
+                 d_diagnoses_pth,
+                 d_items_pth,
+                 inputevents_pth,
+                 outputevents_pth,
+                 icustays_pth,
+                 patients_pth):
+        
         super().__init__(dataset='mimic4', col_stayid='stay_id')
-        self.chartevents_pth = self.source_pth+chartevents_pth
-        self.labevents_pth = self.source_pth+labevents_pth
-        self.diagnoses_pth = f'{self.savepath}diagnoses_icd.parquet'
-        self.outputevents_pth = f'{self.savepath}outputevents.parquet'
-        self.admissions_pth = f'{self.savepath}admissions.parquet'
-        self.inputevents_pth = f'{self.savepath}inputevents.parquet'
-        self.icustays_pth = f'{self.savepath}icustays.parquet'
-        self.patients_pth = f'{self.savepath}patients.parquet'
-        self.ditems_pth = f'{self.savepath}d_items.parquet'
-        self.dlabitems_pth = f'{self.savepath}d_labitems.parquet'
-        self.ddiagnoses_pth = f'{self.savepath}d_icd_diagnoses.parquet'
-        self.tslab_savepath = f'{self.savepath}/timeserieslab.parquet'
-        self.ts_savepath = f'{self.savepath}/timeseries/'
-        self.outputevents_savepath = f'{self.savepath}/timeseriesoutputs.parquet'
+        self.chartevents_pth = self.source_pth + chartevents_pth
+        self.labevents_pth = self.source_pth + labevents_pth
+        self.d_labitems_pth = self.source_pth + d_labitems_pth
+        self.diagnoses_pth = self.source_pth + diagnoses_pth
+        self.admissions_pth = self.source_pth + admissions_pth
+        self.d_diagnoses_pth = self.source_pth + d_diagnoses_pth
+        self.d_items_pth = self.source_pth + d_items_pth
+        self.outputevents_pth = self.source_pth + outputevents_pth
+        self.icustays_pth = self.source_pth + icustays_pth
+        self.patients_pth = self.source_pth + patients_pth
+        self.inputevents_pth = self.source_pth + inputevents_pth
+
+        self.diagnoses_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(diagnoses_pth)
+        self.outputevents_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(outputevents_pth)
+        self.admissions_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(admissions_pth)
+        self.inputevents_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(inputevents_pth)
+        self.icustays_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(icustays_pth)
+        self.patients_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(patients_pth)
+        self.d_items_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(d_items_pth)
+        self.d_labitems_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(d_labitems_pth)
+        self.d_diagnoses_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(d_diagnoses_pth)
+        self.labevents_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(labevents_pth)
+        self.chartevents_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(chartevents_pth)
+
+        self.outputevents_savepath = self.savepath + 'timeseriesoutputs.parquet'
+        self.lab_savepath = self.savepath + 'timeserieslab.parquet'
+        self.flat_savepath = self.savepath + 'flat.parquet'
+        self.ts_savepath = self.savepath + 'timeseries.parquet'
+        
         self.col_los = 'los'
         self.unit_los = 'day'
+
+        
+    def raw_tables_to_parquet(self):
+        """
+        Writes initial csv.gz files to parquet files. This operations 
+        needs only to be done once and allows further methods to be 
+        done laziy using polars.
+        """
+        for i, src_pth in enumerate([
+                self.admissions_pth,
+                self.icustays_pth,
+                self.patients_pth,
+                self.d_labitems_pth,
+                self.d_diagnoses_pth,
+                self.d_items_pth,
+                self.diagnoses_pth,
+                self.outputevents_pth,
+                self.inputevents_pth,
+                self.labevents_pth,
+                self.chartevents_pth,
+                ]):
+            tgt = self.raw_as_parquet_pth + self._get_name_as_parquet(src_pth)
+            if Path(tgt).is_file() and i==0:
+                inp = input('Some parquet files already exist, skip conversion to parquet ?[n], y')
+                if inp.lower() == 'y':
+                    break
+            
+            self.write_as_parquet(src_pth, tgt)
+
 
 
     def gen_icustays(self):
         
-        admissions = pl.scan_parquet(self.admissions_pth)
-        icustays = pl.scan_parquet(self.icustays_pth)
+        admissions = pl.scan_parquet(self.admissions_parquet_pth)
+        icustays = pl.scan_parquet(self.icustays_parquet_pth)
         
         df_icustays = (admissions
                        .select(['hadm_id',
@@ -51,32 +104,7 @@ class mimic4Preparator(DataPreparator):
                        .collect())
         
         return df_icustays
-        
 
-    def load_raw_tables(self):
-        """
-        To make processing faster, a set of tables are converted to .parquet 
-        It is only useful to run this function once.
-        """
-        tables = [
-            'hosp/d_labitems',
-            'hosp/admissions',
-            'hosp/diagnoses_icd',
-            'hosp/d_icd_diagnoses',
-            'icu/d_items',
-            'icu/inputevents',
-            'icu/outputevents',
-            'icu/icustays',
-            'hosp/patients',
-        ]
-
-        for table in tables:
-            print(table)
-            table_pth = Path(table)
-            pth_csv = f'{self.source_pth}/{table_pth}'
-            pth_pqt = f'{self.savepath}/{table_pth.name}'
-
-            self.save(pd.read_csv(f'{pth_csv}.csv.gz'), f'{pth_pqt}.parquet')
 
     def _fetch_heights_weights(self):
         """
@@ -84,14 +112,8 @@ class mimic4Preparator(DataPreparator):
         are fetched to fill the flat and labels tables.
         They can be found under several itemids depending on the unit in 
         which they are measured. Every value is converted to the metric system.
-        
-        TODO : convert to polars
-        
         """
-        print('Fetching heights and weights in the chartevents table...'
-              'this may take several minutes.')
-        
-        icustays = self.icustays.to_pandas()
+        icustays = self.icustays.lazy()
         itemids = {'weight_kg_2': 224639,
                    'weight_kg': 226512,
                    'weight_lbs': 226531,
@@ -100,81 +122,76 @@ class mimic4Preparator(DataPreparator):
 
         keepids = [*itemids.values()]
 
-        chartevents = pd.read_csv(self.chartevents_pth,
-                                  chunksize=self.chunksize,
-                                  usecols=['stay_id',
-                                           'itemid',
-                                           'valuenum',
-                                           'charttime'])
-
-        dfs_hw = []
-        for i, df in enumerate(chartevents):
-            print(f'Read {(i+1)*self.chunksize} lines from chartevents table...')
-            df = df.merge(icustays[['stay_id', 'intime']], on='stay_id')
-                    
-            df['measuretime'] = ((pd.to_datetime(df['charttime'])
-                                 - pd.to_datetime(df['intime']))
-                                 .astype('timedelta64[s]'))
-
-            df = df.loc[(df.itemid.isin(keepids))
-                        & (df.measuretime < self.flat_hr_from_adm)]
-
-            dfs_hw.append(df.drop(columns=['measuretime', 'intime']))
-
-        df_hw = pd.concat(dfs_hw)
-
-        inch_idx = df_hw.itemid == itemids['height_inch']
-        lbs_idx = df_hw.itemid == itemids['weight_lbs']
-        df_hw.loc[inch_idx, 'valuenum'] *= self.inch_to_cm
-        df_hw.loc[lbs_idx, 'valuenum'] *= self.lbs_to_kg
-
-        heights = df_hw.loc[df_hw.itemid.isin([itemids['height_inch'],
-                                               itemids['height_cm']]),
-                            ['stay_id', 'valuenum']]
-        weights = df_hw.loc[df_hw.itemid.isin([itemids['weight_kg_2'],
-                                               itemids['weight_kg'],
-                                               itemids['weight_lbs']]),
-                            ['stay_id', 'valuenum']]
-
-        heights = (heights.rename(columns={'valuenum': 'height'})
-                          .groupby('stay_id')
-                          .mean())
-        weights = (weights.rename(columns={'valuenum': 'weight'})
-                          .groupby('stay_id')
-                          .mean())
-        return heights, weights
+        df = (pl.scan_parquet(self.chartevents_parquet_pth)
+                .select('stay_id', 'itemid', 'valuenum', 'charttime')
+                .with_columns(
+                    pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                    )
+                .join(icustays.select('stay_id', 'intime'), on='stay_id')
+                .with_columns(
+                    (pl.col('charttime') - pl.col('intime')).alias('measuretime')
+                    )
+                .filter(
+                    pl.col('itemid').is_in(keepids),
+                    pl.col('measuretime').le(pl.duration(hours=self.flat_hr_from_adm_int))
+                    )
+                .cast({'itemid': pl.String})
+                .drop('measuretime', 'intime')
+                
+                .collect(streaming=True)
+                .pivot(index=['stay_id', 'charttime'], columns='itemid', values='valuenum')
+                .rename({str(v): k for k, v in itemids.items()})
+                .with_columns(
+                    pl.col('height_inch').mul(self.inch_to_cm).alias('height_inch_in_cm'),
+                    pl.col('weight_lbs').mul(self.lbs_to_kg).alias('weight_lbs_in_kg')
+                    )
+                .with_columns(
+                    pl.concat_list(pl.col('height_cm', 'height_inch_in_cm' )).list.mean().alias('height'),
+                    pl.concat_list(pl.col('weight_kg', 'weight_lbs_in_kg', 'weight_kg_2')).list.mean().alias('weight')
+                    )
+                .select('stay_id', 'charttime', 'height', 'weight')
+                .select(pl.all()
+                        .sort_by('charttime')
+                        .forward_fill()
+                        .over('stay_id')
+                        .sort_by('stay_id'))
+                .group_by('stay_id')
+                .last()
+                .drop('charttime')
+                .lazy())
+        
+        return df
 
     def gen_flat(self):
         print('o Flat Features')
-        icustays = self.icustays.to_pandas()
-        patients = pd.read_parquet(self.patients_pth,
-                                   columns=['subject_id',
-                                            'gender',
-                                            'anchor_age'])
+        icustays = self.icustays.lazy()
+        patients = (pl.scan_parquet(self.patients_parquet_pth)
+                    .select('subject_id', 'gender', 'anchor_age'))
 
-        self.heights, self.weights = self._fetch_heights_weights()
+        self.heights_weights = self._fetch_heights_weights()
 
         df_flat = (icustays
-                           .merge(patients, on='subject_id', how='left')
-                           .merge(self.heights, on='stay_id', how='left')
-                           .merge(self.weights, on='stay_id', how='left')
-                           .sort_values('stay_id')
-                           .rename(columns={'anchor_age': 'age'}))
-        self.df_flat = df_flat
-        df_flat['hour'] = pd.to_datetime(df_flat.intime).dt.hour
-
-        df_flat = df_flat.drop(columns=['subject_id',
-                                        'hadm_id',
-                                        'last_careunit',
-                                        'intime',
-                                        'outtime',
-                                        'los'])
+                   .join(patients, on='subject_id')
+                   .join(self.heights_weights, on='stay_id')
+                   .select(pl.all().sort_by('stay_id'))
+                   .rename({'anchor_age': 'age'})
+                   .with_columns(
+                       hour=pl.col('intime').dt.hour()
+                       )
+                   .drop('subject_id',
+                         'hadm_id',
+                         'last_careunit',
+                         'intime',
+                         'outtime',
+                         'los')
+                   .collect())
 
         return self.save(df_flat, self.flat_savepath)
 
     def _load_inputevents(self):
-        inputevents = pl.scan_parquet(self.inputevents_pth)
-        d_items = pl.scan_parquet(self.ditems_pth)
+        print('o Inputevents')
+        inputevents = pl.scan_parquet(self.inputevents_parquet_pth)
+        d_items = pl.scan_parquet(self.d_items_parquet_pth)
         
         df_inputevents = (inputevents
                           .select(['stay_id',
@@ -187,9 +204,10 @@ class mimic4Preparator(DataPreparator):
         return df_inputevents
         
     def gen_diagnoses(self):
+        print('o Diagnoses')
         icustays = self.icustays.lazy().select('stay_id', 'hadm_id')
-        diagnoses = pl.scan_parquet(self.diagnoses_pth)
-        d_diagnoses = pl.scan_parquet(self.ddiagnoses_pth)
+        diagnoses = pl.scan_parquet(self.diagnoses_parquet_pth)
+        d_diagnoses = pl.scan_parquet(self.d_diagnoses_parquet_pth)
     
         df_diagnoses = (diagnoses
                         .join(icustays,
@@ -211,10 +229,10 @@ class mimic4Preparator(DataPreparator):
         """
         Medication can be found in the inputevents table.
         """
+        print('o Medication')
         inputevents = self._load_inputevents().to_pandas()
-        icustays = pd.read_parquet(self.icustays_pth,
-                                   columns=['stay_id', 'intime', 'los'])
-
+        icustays = self.icustays.to_pandas()
+    
         self.mp = MedicationProcessor('mimic4',
                                       icustays,
                                       col_pid='stay_id',
@@ -251,13 +269,11 @@ class mimic4Preparator(DataPreparator):
         self.save(self.labels, self.labels_savepath)
 
     def gen_timeseriesoutputs(self):
-        """
-        The output table is small enough to be processed all at once.
-        """
+        print('o Outputevents')
         self.get_labels(lazy=True)
-        ditems = pl.scan_parquet(self.ditems_pth)
+        ditems = pl.scan_parquet(self.d_items_parquet_pth)
         
-        outputevents = pl.scan_parquet(self.outputevents_pth)
+        outputevents = pl.scan_parquet(self.outputevents_parquet_pth)
         
         df_outputs = (outputevents
                       .select('hadm_id',
@@ -284,20 +300,13 @@ class mimic4Preparator(DataPreparator):
         self.save(df_outputs, self.outputevents_savepath)
 
     def gen_timeserieslab(self):
-        """
-        This timeserieslab table does not fit in memory, it is processed by 
-        chunks. The processed table is smaller so it is saved to a single file.
-        """
+        print('o Laboratory')
         self.get_labels(lazy=True)
 
-        dlabitems = pl.scan_parquet(self.dlabitems_pth)
+        dlabitems = pl.scan_parquet(self.d_labitems_parquet_pth)
         
         print('o Timeseries Lab')
-        labevents = pl.read_csv(self.labevents_pth,
-                                columns=['hadm_id',
-                                         'itemid',
-                                         'charttime',
-                                         'valuenum']).lazy()
+        labevents = pl.scan_parquet(self.labevents_parquet_pth)
 
         keepvars = self._lab_keepvars()
 
@@ -320,48 +329,48 @@ class mimic4Preparator(DataPreparator):
                              col_value='valuenum')
                        .join(dlabitems.select('itemid', 'label'), on='itemid')
                        .drop(['hadm_id', 'itemid'])
-                       .collect()
-                       )
+                       .collect())
 
-        self.save(self.df_lab, self.tslab_savepath)
+        self.save(self.df_lab, self.lab_savepath)
 
     def gen_timeseries(self):
         self.get_labels(lazy=True)
-        ditems = pl.scan_parquet(self.ditems_pth)
-
-        chartevents = pd.read_csv(self.chartevents_pth,
-                                  chunksize=self.chunksize,
-                                  usecols=['stay_id',
-                                           'charttime',
-                                           'itemid',
-                                           'valuenum'])
+        ditems = pl.scan_parquet(self.d_items_parquet_pth)
 
         print('o Timeseries')
         keepvars = self._timeseries_keepvars()
 
-        keepitemids = ditems.filter(pl.col('label').is_in(keepvars)).select('itemid').collect().to_numpy().flatten()
+        keepitemids = (ditems
+                       .filter(pl.col('label').is_in(keepvars))
+                       .select('itemid')
+                       .collect()
+                       .to_numpy()
+                       .flatten())
 
-        for i, df in enumerate(chartevents):
-            
-            lf = pl.LazyFrame(df)
-            
-            ts = (lf.drop_nulls()
-                    .with_columns(
-                        pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                        pl.col('stay_id').cast(pl.Int64)
-                        )
-                  .pipe(self.pl_prepare_tstable,
-                        keepvars=keepitemids,
-                        col_measuretime='charttime',
-                        col_intime='intime',
-                        col_variable='itemid',
-                        col_value='valuenum',
-                        unit_los='day')
-                  .join(ditems.select('itemid', 'label'), on='itemid')
-                  .drop('itemid')
-                  .collect())
-                  
-            self.save(ts, self.ts_savepath+f'{i}.parquet')
+        chartevents = pl.scan_parquet(self.chartevents_parquet_pth)
+
+        ts = (chartevents
+              .select('stay_id',
+                      'charttime',
+                      'itemid',
+                      'valuenum')
+             .drop_nulls()
+             .with_columns(
+                 pl.col('charttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                 pl.col('stay_id').cast(pl.Int64)
+                 )
+             .pipe(self.pl_prepare_tstable,
+                   keepvars=keepitemids,
+                   col_measuretime='charttime',
+                   col_intime='intime',
+                   col_variable='itemid',
+                   col_value='valuenum',
+                   unit_los='day')
+             .join(ditems.select('itemid', 'label'), on='itemid')
+             .drop('itemid')
+             .collect(streaming=True))
+        
+        self.save(ts, self.ts_savepath)
 
     @staticmethod
     def _lab_keepvars():
