@@ -10,7 +10,7 @@ from mimic3_preprocessing.timeseries import mimic3TSP
 
 tsp = mimic3TSP(
     med_pth='medication.parquet',
-    ts_pth='timeseries/',
+    ts_pth='timeseries.parquet',
     tslab_pth='timeserieslab.parquet',
     outputevents_pth='timeseriesoutputs.parquet')
 

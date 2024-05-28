@@ -47,10 +47,14 @@ class DataPreparator(DataProcessor):
             raise ValueError('Run gen_labels first !')
 
     @staticmethod
-    def write_as_parquet(pth_src, pth_tgt, astype_dic={}, chunksize=1e6):
+    def write_as_parquet(pth_src,
+                         pth_tgt,
+                         astype_dic={},
+                         chunksize=1e6,
+                         encoding=None):
         print(f'Writing {pth_tgt}')
         Path(pth_tgt).parent.mkdir(exist_ok=True)
-        df_chunks = pd.read_csv(pth_src, chunksize=chunksize)
+        df_chunks = pd.read_csv(pth_src, chunksize=chunksize, encoding=encoding)
         for i, df in enumerate(df_chunks):
             astype_dic = {k:v for k, v in astype_dic.items() if k in df.columns}
             df = df.astype(astype_dic)
@@ -62,6 +66,7 @@ class DataPreparator(DataProcessor):
         if pqwriter:
             pqwriter.close()
         print('  -> Done')
+        
     def _to_seconds(self, df, col, unit='second'):
         k = {'day': 86400,
              'hour': 3600,

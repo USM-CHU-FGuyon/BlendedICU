@@ -4,7 +4,9 @@ This code extracts the data from the Amsterdam dataset
 
 It creates a set of .parquet files at the specified path 
 ('amsterdam' in paths.json). 
-Approximate running time: 30min.
+Approximate running time: 
+    * raw_tables_to_parquet()  30min #only run once. csv.gz -> parquet with no data changes.
+    * gen_* : 11min
 """
 from amsterdam_preprocessing.AmsterdamPreparator import AmsterdamPreparator
 
@@ -13,6 +15,8 @@ ams_prep = AmsterdamPreparator(
     drugitems_pth='drugitems.csv.gz',
     numericitems_pth='numericitems.csv.gz',
     listitems_pth='listitems.csv.gz')
+
+ams_prep.raw_tables_to_parquet()
 
 ams_prep.gen_labels()
 ams_prep.gen_medication()

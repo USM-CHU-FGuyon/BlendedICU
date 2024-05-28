@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pandas as pd
 import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
@@ -48,7 +47,7 @@ class mimic4Preparator(DataPreparator):
 
         self.outputevents_savepath = self.savepath + 'timeseriesoutputs.parquet'
         self.lab_savepath = self.savepath + 'timeserieslab.parquet'
-        self.flat_savepath = self.savepath + 'flat.parquet'
+        self.flat_savepath = self.savepath + 'flat_features.parquet'
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
         self.col_los = 'los'

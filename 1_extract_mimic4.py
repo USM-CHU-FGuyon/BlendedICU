@@ -21,8 +21,7 @@ mimic4_prep = mimic4Preparator(
     inputevents_pth='icu/inputevents.csv.gz',
     outputevents_pth='icu/outputevents.csv.gz',
     icustays_pth='icu/icustays.csv.gz',
-    patients_pth='hosp/patients.csv.gz',
-    )
+    patients_pth='hosp/patients.csv.gz')
 
 mimic4_prep.raw_tables_to_parquet()
 

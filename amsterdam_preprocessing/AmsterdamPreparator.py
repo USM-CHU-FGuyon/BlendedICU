@@ -1,4 +1,5 @@
-import pandas as pd
+from pathlib import Path
+
 import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
@@ -12,32 +13,64 @@ class AmsterdamPreparator(DataPreparator):
                  numericitems_pth,
                  listitems_pth):
         super().__init__(dataset='amsterdam', col_stayid='admissionid')
-        self.admission_pth = self.source_pth+admission_pth
-        self.drugitems_pth = self.source_pth+drugitems_pth
-        self.numericitems_pth = self.source_pth+numericitems_pth
-        self.listitems_pth = self.source_pth+listitems_pth
+        self.admission_pth = self.source_pth + admission_pth
+        self.drugitems_pth = self.source_pth + drugitems_pth
+        self.numericitems_pth = self.source_pth + numericitems_pth
+        self.listitems_pth = self.source_pth + listitems_pth
 
-        self.ts_savepath = f'{self.savepath}/numericitems/'
+        self.admission_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(admission_pth)
+        self.drugitems_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(drugitems_pth)
+        self.numericitems_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(numericitems_pth)
+        self.listitems_parquet_pth = self.raw_as_parquet_pth + self._get_name_as_parquet(listitems_pth)
+
+        self.ts_savepath = f'{self.savepath}/numericitems.parquet'
         self.listitems_savepath = f'{self.savepath}/listitems.parquet'
         self.gcs_savepath = f'{self.savepath}/glasgow_coma_scores.parquet'
         self.col_los = 'lengthofstay'
         self.unit_los = 'hour'
 
+    def raw_tables_to_parquet(self):
+        """
+        Writes initial csv.gz files to parquet files. This operations 
+        needs only to be done once and allows further methods to be 
+        done laziy using polars.
+        """
+        for i, src_pth in enumerate([
+                self.admission_pth,
+                self.drugitems_pth,
+                self.listitems_pth,
+                self.numericitems_pth,
+                ]):
+
+            tgt = self.raw_as_parquet_pth + self._get_name_as_parquet(src_pth)
+            print(src_pth, tgt)
+            if Path(tgt).is_file() and i==0:
+                inp = input('Some parquet files already exist, skip conversion to parquet ?[n], y')
+                if inp.lower() == 'y':
+                    break
+            
+            self.write_as_parquet(src_pth,
+                                  tgt,
+                                  astype_dic={},
+                                  encoding='ISO-8859-1')
+            
     def gen_labels(self):
         print('Labels...')
-        admissions = pd.read_csv(self.admission_pth,
-                                 encoding='ISO-8859-1')
-        admissions['care_site'] = 'Amsterdam University medical center'
+        admissions = (pl.scan_parquet(self.admission_parquet_pth)
+                      .with_columns(care_site=pl.lit('Amsterdam University medical center'))
+                      .collect())
+        
         return self.save(admissions, self.labels_savepath)
 
     def gen_medication(self):
         print('Medications...')
         self.reset_chunk_idx()
         self.get_labels()
-        drugitems = pd.read_csv(self.drugitems_pth,
-                                compression='gzip',
-                                encoding='ISO-8859-1',
-                                usecols=['admissionid', 'item', 'start'])
+        
+        drugitems = (pl.scan_parquet(self.drugitems_parquet_pth)
+                     .select('admissionid', 'item', 'start')
+                     .collect()
+                     .to_pandas())
 
         self.mp = MedicationProcessor('amsterdam',
                                       self.labels,
@@ -52,30 +85,23 @@ class AmsterdamPreparator(DataPreparator):
         return self.save(self.med, self.med_savepath)
 
     def gen_listitems_timeseries(self):
-        """
-        The listitems table should fit in memory in most machines.
-        It can be read-processed-saved all at once.
-        A separate file is saved for the computed Glasgow coma scores.
-        """
         print('Listitems ts...')
         self.get_labels(lazy=True)
-        listitems = pd.read_csv(self.listitems_pth,
-                                encoding='ISO-8859-1',
-                                usecols=['admissionid',
-                                         'item',
-                                         'itemid',
-                                         'value',
-                                         'valueid',
-                                         'measuredat'])
 
-        lazylistitems = pl.LazyFrame(listitems)
-
-        df_listitems = lazylistitems.pipe(self.pl_prepare_tstable,
-                                         col_offset='measuredat',
-                                         col_variable='item',
-                                         col_value='value',
-                                         unit_offset='millisecond',
-                                         unit_los='hour').collect()
+        df_listitems = (pl.scan_parquet(self.listitems_parquet_pth)
+                        .select('admissionid',
+                                'item',
+                                'itemid',
+                                'value',
+                                'valueid',
+                                'measuredat')
+                        .pipe(self.pl_prepare_tstable,
+                              col_offset='measuredat',
+                              col_variable='item',
+                              col_value='value',
+                              unit_offset='millisecond',
+                              unit_los='hour')
+                        .collect())
         
         df_gcs = self._compute_gcs(df_listitems.to_pandas())
         
@@ -122,36 +148,17 @@ class AmsterdamPreparator(DataPreparator):
 
 
     def gen_num_timeseries(self):
-        """
-        The numericitems table does not fit in memory on most machines. 
-        The processing is done by chunks:
-             The numericitem csv file is read by chunks of 10_000_000 rows by
-             default.
-             when the patient chunksize is reached (by default n_patient_chunk
-                                                    is 1000)
-             a chunk of patient is saved to a parquet file.
-        It is possible to process in this way because the patients in the 
-        numericitems table are ordered.
-        """
-        print('numericitems ts...')
+        print('numericitems...')
         self.get_labels(lazy=True)
 
-        df_chunks = pd.read_csv(self.numericitems_pth,
-                                compression='gzip',
-                                encoding='ISO-8859-1',
-                                chunksize=self.chunksize,
-                                usecols=['admissionid',
-                                         'item',
-                                         'value',
-                                         'measuredat'])
+        df = (pl.scan_parquet(self.numericitems_parquet_pth)
+              .select('admissionid', 'item', 'value', 'measuredat')
+              .pipe(self.pl_prepare_tstable,
+                    col_offset='measuredat',
+                    col_variable='item',
+                    col_value='value',
+                    unit_offset='millisecond',
+                    unit_los='hour')
+              .collect(streaming=True))
 
-        for i, chunk in enumerate(df_chunks):
-            chunk = pl.LazyFrame(chunk)
-            df = (chunk.pipe(self.pl_prepare_tstable,
-                                         col_offset='measuredat',
-                                         col_variable='item',
-                                         col_value='value',
-                                         unit_offset='millisecond',
-                                         unit_los='hour')
-                  .collect())
-            self.save(df, self.ts_savepath+f'{i}.parquet')
+        self.save(df, self.ts_savepath)
