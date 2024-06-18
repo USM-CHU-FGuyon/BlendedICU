@@ -61,7 +61,7 @@ class eicuPreparator(DataPreparator):
         self.col_los = 'unitdischargeoffset'
         self.unit_los = 'minute'
 
-        self.patient = pl.scan_parquet(self.patient_parquet_pth)
+        
 
 
 
@@ -100,6 +100,9 @@ class eicuPreparator(DataPreparator):
                                               'loadingdose': str,
                                               'drugrate': str})
             
+    def init_gen(self):
+        self.patient = pl.scan_parquet(self.patient_parquet_pth)
+            
 
     def _load_los(self, col_id, col_los):
         try:
@@ -136,6 +139,8 @@ class eicuPreparator(DataPreparator):
                          .select('patientunitstayid',
                                  'drugoffset',
                                  'drugname'))
+        #drugdosage, drugunit
+        
         
         infusiondrug = (pl.scan_parquet(self.infusiondrug_parquet_pth)
                         .select('patientunitstayid',
@@ -143,17 +148,24 @@ class eicuPreparator(DataPreparator):
                                 'drugname')
                         .rename({"infusionoffset": "drugoffset"}))
 
+        # colonne drugunit facile a creer.
+
+
         medication = (pl.scan_parquet(self.medication_parquet_pth)
                       .select('patientunitstayid',
                               'drugstartoffset',
                               'drugname')
                       .rename({'drugstartoffset': 'drugoffset'}))
         
+        #routeadmin, dosage
+        
         medication_in = (pl.concat([infusiondrug,
                                    medication,
                                    admissiondrug])
                          .collect()
                          .to_pandas())
+
+
 
         self.mp = MedicationProcessor(self.dataset,
                                       self.labels.collect().to_pandas(),
@@ -181,8 +193,7 @@ class eicuPreparator(DataPreparator):
                         'unitadmitsource',
                         'unitvisitnumber',
                         'unitstaytype')
-                .sort('patientunitstayid')
-                .collect())
+                .sort('patientunitstayid'))
 
         return self.save(flat, self.flat_savepath)
 
@@ -247,7 +258,7 @@ class eicuPreparator(DataPreparator):
             'bedside glucose', 'urinary specific gravity', 'Base Excess',
             'O2 Sat (%)', 'MPV']
         
-        df = (lab
+        lf = (lab
               .select(['patientunitstayid',
                           'labname',
                           'labresultoffset',
@@ -258,9 +269,9 @@ class eicuPreparator(DataPreparator):
                     col_variable='labname',
                     unit_offset='minute',
                     unit_los='minute',
-                    col_value='labresult')
-              .collect())
-        self.save(df, self.lab_savepath)
+                    col_value='labresult'))
+        
+        self.save(lf, self.lab_savepath)
 
 
     def gen_timeseriesintakeoutput(self):
@@ -268,7 +279,7 @@ class eicuPreparator(DataPreparator):
         self.get_labels(lazy=True)
         intakeoutput = pl.scan_parquet(self.intakeoutput_parquet_pth)
         
-        self.intakeout = (intakeoutput.select(['patientunitstayid',
+        lf = (intakeoutput.select(['patientunitstayid',
                                                'celllabel',
                                                'intakeoutputoffset',
                                                'cellvaluenumeric'])
@@ -277,10 +288,9 @@ class eicuPreparator(DataPreparator):
                                             col_variable='celllabel',
                                             unit_offset='minute',
                                             unit_los='minute',
-                                            col_value='cellvaluenumeric')
-                                      .collect())
+                                            col_value='cellvaluenumeric'))
         
-        self.save(self.intakeout, self.intakeoutput_savepath)
+        self.save(lf, self.intakeoutput_savepath)
         
     def gen_timeseriesresp(self):
         self.get_labels(lazy=True)
@@ -294,7 +304,7 @@ class eicuPreparator(DataPreparator):
                     'Exhaled TV (patient)',
                     'Mean Airway Pressure', 'Exhaled MV', 'SaO2']
         
-        tsresp = (respiratorycharting
+        lf = (respiratorycharting
                   .select('patientunitstayid',
                           'respchartoffset',
                           'respchartvaluelabel',
@@ -308,10 +318,9 @@ class eicuPreparator(DataPreparator):
                         cast_to_float=False,
                         additional_expr=[(pl.col('respchartvalue')
                                           .str.replace('%', '')
-                                          .cast(pl.Float32(), strict=False))])
-                  .collect())
+                                          .cast(pl.Float32(), strict=False))]))
         
-        self.save(tsresp, self.tsresp_savepath)
+        self.save(lf, self.tsresp_savepath)
 
 
     def gen_timeseriesnurse(self):
@@ -326,7 +335,7 @@ class eicuPreparator(DataPreparator):
                     'O2 Admin Device', 'Sedation Scale/Score/Goal',
                     'Delirium Scale/Score']
     
-        df = (nursecharting
+        lf = (nursecharting
               .select('patientunitstayid',
                        'nursingchartoffset',
                        'nursingchartcelltypevallabel',
@@ -337,10 +346,9 @@ class eicuPreparator(DataPreparator):
                     col_variable='nursingchartcelltypevallabel',
                     unit_offset='minute',
                     unit_los='minute',
-                    col_value='nursingchartvalue')
-              .collect())
+                    col_value='nursingchartvalue'))
         
-        self.save(df, self.nursecharting_savepath)
+        self.save(lf, self.nursecharting_savepath)
 
 
     def gen_timeseriesaperiodic(self):
@@ -356,7 +364,7 @@ class eicuPreparator(DataPreparator):
                        'noninvasivediastolic',
                        'noninvasivemean']
         
-        df = (vitalaperiodic.select(['patientunitstayid',
+        lf = (vitalaperiodic.select(['patientunitstayid',
                                      'observationoffset',
                                      *numeric_cols])
              .pipe(self.pl_prepare_tstable,
@@ -364,21 +372,13 @@ class eicuPreparator(DataPreparator):
                    unit_offset='minute',
                    cast_to_float=False,
                    additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
-                                    for col in numeric_cols])
-             .collect())
+                                    for col in numeric_cols]))
         
-        self.save(df, self.aperiodic_savepath)
+        self.save(lf, self.aperiodic_savepath)
 
 
     def gen_timeseriesperiodic(self):
-        '''
-        As of polars 0.20 there is no support for reading csv.gz by chunks.
-        We load the files in pandas and convert them to lazyframes for 
-        unified processing. 
-        
-        This should be changed to full polars when the feature is up.
-        
-        '''
+
         self.get_labels(lazy=True)
         print('o Timeseriesperiodic')
         numeric_cols = ['temperature',
@@ -403,8 +403,7 @@ class eicuPreparator(DataPreparator):
                     unit_los='minute',
                     cast_to_float=False,
                     additional_expr=[pl.col(col).cast(pl.Float32, strict=False)
-                                     for col in numeric_cols])
-              .collect(streaming=True))
+                                     for col in numeric_cols]))
         
         self.save(lf, self.tsperiodic_savepath)
     

@@ -3,7 +3,7 @@ This script lauches the timeseriesprocessing (tsp) and the flat and labels
 processing (flp) for the mimic database. 
 Note that this produces the 'raw' data of the BlendedICU dataset.
 The preprocessed BlendedICU dataset will then be obtained with 3_blendedICU.py
-Approximate running time: 1h.
+Approximate running time: 30m.
 """
 from mimic3_preprocessing.flat_and_labels import mimic3_FLProcessor
 from mimic3_preprocessing.timeseries import mimic3TSP

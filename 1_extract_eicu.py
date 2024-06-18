@@ -28,6 +28,7 @@ eicu_prep = eicuPreparator(
 
 eicu_prep.raw_tables_to_parquet()
 
+eicu_prep.init_gen()
 eicu_prep.gen_labels()
 eicu_prep.gen_flat()
 eicu_prep.gen_medication()

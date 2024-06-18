@@ -2,6 +2,7 @@ import operator
 from functools import reduce
 
 import pandas as pd
+import polars as pl
 
 from database_processing.dataprocessor import DataProcessor
 
@@ -128,12 +129,18 @@ class MedicationProcessor(DataProcessor):
         return pd.concat(pieces).reset_index(drop=True)
 
     def run(self, df):
+        lf = pl.LazyFrame(df)
+        lf_labels = pl.LazyFrame(self.labels)
+        
+        med = (lf
+               .join(lf_labels, on=self.col_pid)
+               .collect().to_pandas())
 
-        med = (df.merge(self.labels, on=self.col_pid)
-                 .pipe(self._offset_calc)
-                 .pipe(self._convert_to_seconds)
-                 .pipe(self._clip_time)
-                 .pipe(self._get_ingredients)
-                 .pipe(self._add_dummy_value)
-                 .pipe(self._start_and_end))
+        med = (med
+               .pipe(self._offset_calc)
+               .pipe(self._convert_to_seconds)
+               .pipe(self._clip_time)
+               .pipe(self._get_ingredients)
+               .pipe(self._add_dummy_value)
+               .pipe(self._start_and_end))
         return med

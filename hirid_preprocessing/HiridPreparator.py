@@ -25,17 +25,58 @@ class hiridPreparator(DataPreparator):
         self.med_path = self.source_pth + pharma_path
         self.imputedstage_path = self.source_pth + imputedstage_path
         
+        self.variable_ref_parquet_path = self.raw_as_parquet_pth + self._get_name_as_parquet(self.variable_ref_path)
+        self.admissions_parquet_path = self.raw_as_parquet_pth + self._get_name_as_parquet(self.admissions_path)
+        self.ts_parquet_path = self.raw_as_parquet_pth + self._get_name_as_parquet(Path(self.ts_path).parent)
+        self.med_parquet_path = self.raw_as_parquet_pth + self._get_name_as_parquet(Path(self.med_path).parent)
+        self.imputedstage_parquet_path = self.raw_as_parquet_pth + self._get_name_as_parquet(Path(self.imputedstage_path).parent)
+        
         self._check_files_untarred()
         
         self.ts_savepth = self.savepath + 'timeseries.parquet'
         self.pharma_savepth = self.savepath+'/pharma_1000_patient_chunks/'
-        self.id_mapping = self._variablenames_mapping()
-
+        
         self.weights = None
         self.heights = None
         
-        self.lazyadmissions, self.admissions = self._load_admissions()
 
+    def raw_tables_to_parquet(self):
+        """
+        Writes initial csv.gz files to parquet files. This operations 
+        needs only to be done once and allows further methods to be 
+        done laziy using polars.
+        """
+        pths_as_parquet = {
+                self.variable_ref_path: (False, ';'),
+                self.admissions_path: (False, ','),
+                #self.imputedstage_path: (True, None),
+                #self.ts_path: (True, None),
+                #self.med_path: (True, None),
+                }
+        
+        for i, (src_pth, (src_is_multiple_parquet, sep)) in enumerate(pths_as_parquet.items()):
+            
+            if src_is_multiple_parquet:
+                tgt = self.raw_as_parquet_pth + self._get_name_as_parquet(Path(src_pth).parent)
+            else:
+                tgt = self.raw_as_parquet_pth + self._get_name_as_parquet(src_pth)
+            
+            if Path(tgt).is_file() and i==0:
+                inp = input('Some parquet files already exist, skip conversion to parquet ?[n], y')
+                if inp.lower() == 'y':
+                    break
+
+            self.write_as_parquet(src_pth,
+                                  tgt,
+                                  astype_dic={},
+                                  encoding='unicode_escape',
+                                  sep=sep,
+                                  src_is_multiple_parquet=src_is_multiple_parquet)
+
+    def init_gen(self):
+        self.id_mapping = self._variablenames_mapping()
+        self.lazyadmissions, self.admissions = self._load_admissions()
+        
     def _check_files_untarred(self):
         '''Checks that files were properly untarred at step 0.'''
         notfound = False
@@ -52,16 +93,8 @@ class hiridPreparator(DataPreparator):
             raise ValueError('Some files are missing, see warnings above.')
             
             
-    def _load_ts_chunks(self):
-        for p in Path(self.ts_path).iterdir():
-            yield pd.read_parquet(p,
-                                  columns=['datetime',
-                                           'patientid',
-                                           'value',
-                                           'variableid'])
-
     def _load_pharma_chunks(self):
-        df_all_in_one_chunk = pd.read_parquet(self.med_path,
+        df_all_in_one_chunk = pd.read_parquet(self.med_parquet_path,
                                               columns=['patientid',
                                                        'pharmaid',
                                                        'givenat',
@@ -73,7 +106,7 @@ class hiridPreparator(DataPreparator):
         As is usually done with this database, the length of stay is defined as
         the last timeseries measurement of a patient.
         """
-        timeseries = pl.scan_parquet(self.imputedstage_path+'*.parquet')
+        timeseries = pl.scan_parquet(self.imputedstage_parquet_path)
 
         los = (timeseries
              .select('patientid', 'reldatetime')
@@ -87,8 +120,13 @@ class hiridPreparator(DataPreparator):
         
     
     def _load_admissions(self):
-        adm = pl.scan_csv(self.admissions_path)
-        
+        try:
+            adm = pl.scan_parquet(self.admissions_parquet_path)
+        except FileNotFoundError:
+            print(self.admissions_parquet_path,
+                  'was not found.\n run raw_tables_to_parquet first.' )
+            return None, None
+
         adm = (adm
                .rename({'patientid': 'admissionid'})
                .with_columns(
@@ -99,14 +137,20 @@ class hiridPreparator(DataPreparator):
         return adm, adm.collect().to_pandas()
 
     def _variablenames_mapping(self):
-        variable_ref = pd.read_csv(self.variable_ref_path,
-                                   sep=';',
-                                   encoding='unicode_escape',
-                                   usecols=['Source Table',
-                                            'ID',
-                                            'Variable Name'])
-
-        variable_ref = variable_ref.dropna()
+        try:        
+            lf = pl.scan_parquet(self.variable_ref_parquet_path)
+        except FileNotFoundError:
+            print(self.variable_ref_parquet_path,
+                  'was not found.\n run raw_tables_to_parquet first.' )
+            return None
+        variable_ref = (lf
+                        .select('Source Table',
+                                'ID',
+                                'Variable Name')
+                        .collect()
+                        .to_pandas()
+                        .dropna()
+                        )
 
         idx_obs = variable_ref['Source Table'] == 'Observation'
         idx_pharma = variable_ref['Source Table'] == 'Pharma'
@@ -127,23 +171,23 @@ class hiridPreparator(DataPreparator):
                 'pharma': pharma_id_mapping}
 
     def _load_heights_weights(self):
-        print('Fetching heights and weights in timeseries data, this will '
+        print('Fetching heights and weights in timeseries data, this step '
               'takes several minutes.')
         variables = {'weight': 10000400,
                      'height': 10000450}
         
-        ts = pl.scan_parquet(self.ts_path+'*.parquet')
+        ts = pl.scan_parquet(self.ts_parquet_path)
         
         df = (ts
-             .select(['datetime',
+             .select('datetime',
                      'patientid',
                      'value',
-                     'variableid'])
+                     'variableid')
              .rename({'datetime': 'valuedate',
                       'patientid': 'admissionid'})
              .filter((pl.col('variableid')==variables['height']) 
                      | (pl.col('variableid')==variables['weight']))
-             .join(self.lazyadmissions.select(['admissiontime', 'admissionid']),
+             .join(self.lazyadmissions.select('admissiontime', 'admissionid'),
                    on='admissionid')
              .with_columns(
                  valuedate = pl.col('valuedate') - pl.col('admissiontime')
@@ -231,16 +275,15 @@ class hiridPreparator(DataPreparator):
                       .join(lengthsofstay, on='admissionid', how='left')
                       .with_columns(
                           care_site=pl.lit('Bern University Hospital')
-                          )
-                      .collect())
+                          ))
 
         self.save(admissions, self.savepath+'labels.parquet')
 
     def gen_timeseries(self):
         self.get_labels(lazy=True)
-        ts = pl.scan_parquet(self.ts_path+'/*.parquet')
+        ts = pl.scan_parquet(self.ts_parquet_path)
         
-        df = (ts
+        lf = (ts
               .select(['datetime', 'patientid', 'value', 'variableid'])
               .with_columns(pl.col('patientid').alias(self.col_stayid))
               .pipe(self.pl_prepare_tstable, 
@@ -250,19 +293,22 @@ class hiridPreparator(DataPreparator):
                     id_mapping=self.id_mapping['observation'],
                     col_value='value',
                     )
-              .collect(streaming=True)
               )
         
-        self.save(df, self.ts_savepth)
-        return df
+        self.save(lf, self.ts_savepth)
+        return lf
     
     def gen_medication(self):
         """
-        Similary to the timeseries table, the patients are not ordered in the 
+        Because patients are not ordered in the 
         raw files. the _build_patient_chunk goes through the whole table to
         extract data from a chunk of patients.
         TODO : to polars !
         """
+        
+        #col_dosage=givendose
+        #col_unit=doseunit
+        #col_route=route
         self.reset_chunk_idx()
         self.get_labels()
         self.mp = MedicationProcessor('hirid',

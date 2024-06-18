@@ -232,6 +232,10 @@ class mimic4Preparator(DataPreparator):
         inputevents = self._load_inputevents().to_pandas()
         icustays = self.icustays.to_pandas()
     
+        #col_route=
+        #col dosage=amount
+        #col_unit=amountuom
+    
         self.mp = MedicationProcessor('mimic4',
                                       icustays,
                                       col_pid='stay_id',

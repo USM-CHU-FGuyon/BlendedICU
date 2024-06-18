@@ -55,12 +55,15 @@ class mimic3TSP(TimeseriesProcessor):
         }
 
     def _get_stays(self):
-        return self.scan(self.labels_savepath).select('ICUSTAY_ID').unique().collect().to_numpy().flatten()
+        return (self.scan(self.labels_savepath)
+                .select('ICUSTAY_ID')
+                .unique()
+                .collect().to_numpy().flatten())
         
     def run(self, reset_dir=None):
         self.reset_dir(reset_dir)
         self.stays = self._get_stays()
-        self.stay_chunks = self.get_stay_chunks()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
         
         self.lf_medication = self.harmonize_columns(self.lf_medication,
                                                     **self.colnames_med)
@@ -76,18 +79,29 @@ class mimic3TSP(TimeseriesProcessor):
                                      self.outputevents],
                                     how='diagonal')
         
-        for chunk_number, patient_chunk in enumerate(self.stay_chunks):
+        lf_med = self.filter_tables(self.lf_medication,
+                                    kept_variables=self.kept_med)
+        
+        lf_ts = self.filter_tables(self.lf_timeser,
+                                   kept_variables=self.kept_ts)
+        
+        lf_formatted_ts = self.pl_format_timeseries(lf_ts)
+        lf_formatted_med = self.pl_format_meds(lf_med)
+        
+        for chunk_number, stay_chunk in enumerate(self.stay_chunks):
             
-            timeser = (self.filter_tables(self.lf_timeser,
-                                          kept_variables=self.kept_ts,
-                                          kept_stays=patient_chunk)
-                            .collect().to_pandas())
+            lf_med_chunked = self.filter_tables(lf_formatted_med,
+                                                kept_stays=stay_chunk)
+            
+            lf_formatted_ts_chunked = self.filter_tables(lf_formatted_ts,
+                                                         kept_stays=stay_chunk)
+            
+            self.df_med_chunked = (lf_med_chunked
+                      .collect())
+            
+            self.df_ts_chunked = (lf_formatted_ts_chunked
+                             .collect())
 
-            medic = (self.filter_tables(self.lf_medication,
-                                          kept_variables=self.kept_med,
-                                          kept_stays=patient_chunk)
-                          .collect().to_pandas())
-
-            self.process_tables(timeser,
-                                med=medic,
+            self.newprocess_tables(self.df_ts_chunked,
+                                med=self.df_med_chunked,
                                 chunk_number=chunk_number)

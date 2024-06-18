@@ -21,10 +21,11 @@ class mimic4TSP(TimeseriesProcessor):
         self.lf_medication = self.scan(self.savepath+med_pth)
         self.lf_timeseries = self.scan(self.savepath+ts_pth)
         self.lf_timeseries_lab = self.scan(self.savepath+tslab_pth)
-        self.lf_outputevents = self.scan(self.savepath+outputevents_pth).select('stay_id',
-                 'offset',
-                 'value',
-                 'label')
+        self.lf_outputevents = (self.scan(self.savepath+outputevents_pth)
+                                .select('stay_id',
+                                        'offset',
+                                        'value',
+                                        'label'))
 
         self.colnames_med = {
             'col_id': 'stay_id',
@@ -76,22 +77,26 @@ class mimic4TSP(TimeseriesProcessor):
                              how='diagonal')
 
         self.stays = self.get_stays()
-        self.stay_chunks = self.get_stay_chunks()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=5_000)
+
+        lf_med = self.filter_tables(self.lf_medication,
+                                    kept_variables=self.kept_med)
+        
+        lf_ts = self.filter_tables(lf_ts,
+                                   kept_variables=self.kept_ts)
+        
+        lf_formatted_ts = self.pl_format_timeseries(lf_ts)
+        lf_formatted_med = self.pl_format_meds(lf_med)
 
         for chunk_number, stay_chunk in enumerate(self.stay_chunks):
             
-            med = (self.filter_tables(self.lf_medication,
-                                    kept_variables=self.kept_med,
-                                    kept_stays=stay_chunk)
-                   .collect()
-                   .to_pandas())
+            lf_formatted_med_chunked = self.filter_tables(lf_formatted_med,
+                                        kept_stays=stay_chunk)
             
-            ts = (self.filter_tables(lf_ts,
-                                    kept_variables=self.kept_ts,
-                                    kept_stays=stay_chunk)
-                  .collect()
-                  .to_pandas())
+            lf_formatted_ts_chunked = self.filter_tables(lf_formatted_ts,
+                                                 kept_stays=stay_chunk)
 
-            self.process_tables(ts,
-                                med=med,
-                                chunk_number=chunk_number)
+                
+            self.newprocess_tables(lf_formatted_ts_chunked,
+                                  med=lf_formatted_med_chunked,
+                                  chunk_number=chunk_number)

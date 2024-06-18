@@ -12,10 +12,10 @@ class hiridTSP(TimeseriesProcessor):
         self.lf_ts = self.scan(self.savepath+ts_chunks)
         self.lf_med = self.scan(self.savepath+pharma_chunks)
 
-        self.med_colnames = {'col_id': 'admissionid',
+        self.med_colnames = {'col_id': 'patientid',
                              'col_var': 'label'}
 
-        self.ts_colnames = {'col_id': 'admissionid',
+        self.ts_colnames = {'col_id': 'patientid',
                             'col_var': 'variable',
                             'col_value': 'value',
                             'col_time': self.col_offset}
@@ -33,22 +33,21 @@ class hiridTSP(TimeseriesProcessor):
         self.stay_chunks = self.get_stay_chunks()
         kept_variables = (self.kept_ts+['Body weight', 'Body height measure'])
 
-        self.lf_ts = self.harmonize_columns(self.lf_ts, **self.ts_colnames)
-        self.lf_med = self.harmonize_columns(self.lf_med, **self.med_colnames)
+        lf_ts = self.harmonize_columns(self.lf_ts, **self.ts_colnames)
+        lf_med = self.harmonize_columns(self.lf_med, **self.med_colnames)
 
         for chunk_number, stay_chunk in enumerate(self.stay_chunks):
             print(f'Chunk {chunk_number}')
 
-            ts = (self.filter_tables(self.lf_ts,
+            self.ts = (self.filter_tables(lf_ts,
                                     kept_variables=kept_variables,
                                     kept_stays=stay_chunk)
-                  .collect(streaming=True)
-                  .to_pandas())
+                       .collect(streaming=True))
 
-            med = (self.filter_tables(self.lf_med,
-                                     kept_variables=self.kept_med,
-                                     kept_stays=stay_chunk)
-                   .collect()
-                   .to_pandas())
+            self.med = (self.filter_tables(lf_med,
+                                    kept_variables=self.kept_med,
+                                     kept_stays=stay_chunk))
+            
+            lf_formatted_ts = self.pl_format_raw_data(self.ts.lazy(), med=self.med, chunk_number=chunk_number)
 
-            self.process_tables(ts, med=med, chunk_number=chunk_number)
+            self.newprocess_tables(lf_formatted_ts.to_pandas(), med=self.med.collect().to_pandas(), chunk_number=chunk_number)

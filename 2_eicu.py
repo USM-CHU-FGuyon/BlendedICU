@@ -7,8 +7,8 @@ Approximate running time: 8h.
 """
 from eicu_preprocessing.flat_and_labels import eicu_FLProcessor
 from eicu_preprocessing.timeseries import eicuTSP
-
-tsp = eicuTSP(
+import polars as pl
+self = eicuTSP(
     lab_pth='lab.parquet',
     resp_pth='tsresp.parquet',
     nurse_pth='tsnurse.parquet',
@@ -16,8 +16,8 @@ tsp = eicuTSP(
     periodic_pth='tsperiodic.parquet',
     inout_pth='tsintakeoutput.parquet')
 
-tsp.run(reset_dir=False)
-
+self.run(reset_dir=False)
+1/0
 flp = eicu_FLProcessor()
 
 flp.run_labels()

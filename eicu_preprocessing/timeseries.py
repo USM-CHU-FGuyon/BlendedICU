@@ -76,7 +76,8 @@ class eicuTSP(TimeseriesProcessor):
 
         self.reset_dir(reset_dir)
         self.stays = self._get_stays()
-        self.stay_chunks = self.get_stay_chunks()
+        #decrease n_patient_chunk for lower memory usage.
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
         
         self.lf_med = self.harmonize_columns(self.lf_med,
                                              **self.colnames_med)
@@ -105,31 +106,36 @@ class eicuTSP(TimeseriesProcessor):
             self.lf_tsnurse,
             self.lf_tsinout,
             ])
-        
+
         lf_ts_hor = (self.lf_tsperiodic
                      .join(self.lf_tsaperiodic,
-                           on=(self.idx_col, self.time_col),
-                           how='outer_coalesce'))
+                           on=(self.idx_col_int, self.time_col),
+                           how='outer_coalesce')
+                     )
 
+
+        med_formatted = self.pl_format_meds(self.lf_med)
 
         for i, stay_chunk in enumerate(self.stay_chunks):
+            1/0
+            self.ts_hor_chunk = (self.filter_tables(lf_ts_hor,
+                                        kept_stays=stay_chunk,
+                                        ).collect())
             
-            ts_ver = (self.filter_tables(lf_ts_ver,
-                                         kept_variables=self.kept_ts,
-                                         kept_stays=stay_chunk)
-                      .collect().to_pandas())
+            self.ts_ver_chunk = (self.filter_tables(lf_ts_ver,
+                                        kept_stays=stay_chunk,
+                                        kept_variables=self.kept_ts
+                                        ).collect())
             
-            ts_hor = (self.filter_tables(lf_ts_hor,
-                                         kept_stays=stay_chunk,
-                                         )
-                      .collect().to_pandas())
-
-            med = (self.filter_tables(self.lf_med, 
+            self.med_chunk = (self.filter_tables(med_formatted, 
                                      kept_stays=stay_chunk,
-                                     kept_variables=self.kept_med)
-                   .collect().to_pandas())
+                                     kept_variables=self.kept_med
+                                     ))
 
-            self.process_tables(ts_ver,
-                                ts_hor,
-                                med=med,
+            ts_formatted_chunk = self.pl_format_timeseries(lf_tsver=self.ts_ver_chunk.lazy(),
+                                                           lf_tshor=self.ts_hor_chunk.lazy(),
+                                                           chunk_number=i)
+            
+            self.newprocess_tables(ts_formatted_chunk,
+                                med=self.med_chunk.collect().to_pandas(),
                                 chunk_number=i)

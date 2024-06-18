@@ -21,7 +21,7 @@ class TimeseriesProcessor(DataProcessor):
         self.ts_variables_pth = self.user_input_pth+'timeseries_variables.csv'
         self.ts_variables = self._load_tsvariables()
 
-        self.kept_ts = self.ts_variables[self.dataset].to_list()
+        self.kept_ts = self.ts_variables[self.dataset].dropna().to_list()
 
         self.kept_med = self._kept_meds()
         self.index = None
@@ -38,7 +38,7 @@ class TimeseriesProcessor(DataProcessor):
              'hour':{'blended':'hour',
                      'eicu': 'hour',
                      'mimic4':'hour',
-                     'mimic3': 'time',
+                     'mimic3': 'hour',
                      'amsterdam': 'hour',
                      'hirid': 'hour',
                      'is_numeric':1,
@@ -61,85 +61,108 @@ class TimeseriesProcessor(DataProcessor):
 
         self.col_mapping = self.cols.set_index(self.dataset, drop=False)['blended'].to_dict()
         self.omop_mapping = self.cols['hirid'].to_dict()
-        self.aggregates_blended = self.cols['agg_method']
+        self.aggregates_blended = pd.concat([self.cols['agg_method'], pd.Series({'patient': 'first'})])
         self.aggregates = self.cols.set_index(self.dataset)['agg_method']
         self.dtypes = self._get_dtypes()
         self.is_measured = self.ts_variables.set_index('blended').notna()
         self.numeric_ts = self._get_numeric_cols()
+        self.cols_minmax = self._get_cols_minmax()
         self.pyarrow_schema_dict = self._pyarrow_schema_dict()
         self.column_template = self._column_template()
-
-        self.harmonizer = {
-            'amsterdam': self._harmonize_amsterdam,
-            'hirid': self._harmonize_hirid,
-            'eicu': self._harmonize_eicu,
-            'mimic3': self._harmonize_mimic3,
-            'mimic4': self._harmonize_mimic4,
+        
+        self.pl_harmonizer = {
+            'amsterdam': self._pl_harmonize_amsterdam,
+            'eicu': self._pl_harmonize_eicu,
+            'hirid': self._pl_harmonize_hirid,
+            'mimic4': self._pl_harmonize_mimic4,
+            'mimic3': self._pl_harmonize_mimic3,
             'blended': (lambda x: x)
-        }[self.dataset]
+            }[self.dataset]
 
-    def process_tables(self,
-                       ts_ver=None,
-                       ts_hor=None,
-                       med=None,
-                       admission_hours=None,
-                       stop_at_first_chunk=False,
-                       chunk_number=None):
-        '''
-        time should be an int in hour
-        patient a unique patient identifier.
-
-        ts_ver : columns should be :  'patient', 'time', 'variable', 'value'
-        ts_hor : columns should be :  'patient', 'time', var1, var2,...
-        admission_hours : index should be 'patient', column should be 'hour'
-          if no admission hour is provided, midnight will be taken as admission
-          for all patients.
-          
-         stop_at_first_chunk:
-             if True, the code will stop after processing of the first chunk.
-             This can be useful for debugging or testing the pipeline on a 
-             single chunk
-        '''
-        if chunk_number is None:
-            raise ValueError('Please specify chunk number when calling process_tables')
+    def _get_cols_minmax(self):
+        df = self.cols.dropna(subset=self.dataset).set_index(self.dataset)
+        df = df.loc[df.is_numeric.astype(bool), ['user_min', 'user_max']].replace(np.nan, None)
+        df = df.to_dict('index')
+        return df
+        
+    @staticmethod
+    def collect_if_lazy(df):
+        if isinstance(df, pl.lazyframe.frame.LazyFrame):
+            df = df.collect()
+        return df.to_pandas()
+    
+    
+    def newprocess_tables(self,
+                         timeseries,
+                         med=None,
+                         admission_hours=None,
+                         stop_at_first_chunk=False,
+                         chunk_number=None):
+        import time
+        t0 = time.time()
         t_max = self.upper_los*24*3600
+        print('filtering...', end=" ")
+        
+        
+        med = (med
+               .filter(
+                   (pl.col('start')>=0) &
+                   pl.col('end')< t_max
+                   )
+               )
+        
+        timeseries = (timeseries
+                      .filter(
+                          (pl.col(self.time_col)>=0) & (pl.col(self.time_col)<t_max),
+                          )
+                      )
 
-        timeseries = self.format_raw_data(ts_ver=ts_ver,
-                                          ts_hor=ts_hor,
-                                          med=med,
-                                          chunk_number=chunk_number)
-
-        time = timeseries.index.get_level_values(1)
-        timeseries = timeseries.loc[(time >= 0) & (time < t_max)]
-        med = med.loc[(med.start >= 0) & (med.end < t_max)]
-
-        self.index = self._build_index(timeseries,
-                                       cols_index=['patient', 'time'])
-
-        self.index_start1 = self.index[self.index.get_level_values(1) > 0]
-
-        self.med_mask = self._make_med_mask(med)
+        timeseries = self.collect_if_lazy(timeseries)
+        med = self.collect_if_lazy(med)
+        
+        timeseries = timeseries.set_index([self.idx_col_int, self.time_col])
         self.ts = timeseries
 
-        dropcols = [c for c in timeseries.columns if c not in self.cols['blended'].values]
-        self.chunk = (timeseries.drop(columns=dropcols)
-                                .pipe(self._resampling)
-                                .pipe(self._mask)
-                                .join(self.med_mask,
-                                      how='outer')
-                                .pipe(self._add_hour,
-                                      admission_hours=admission_hours)
-                                .reindex(self.index_start1)
-                                .reset_index())
+    
 
+
+        print('done.', time.time()-t0)
+        print('build index', end=' ')
+        self.index = self._build_index(timeseries,
+                                       cols_index=[self.idx_col_int, self.time_col])
+ 
+        self.index_start1 = self.index[self.index.get_level_values(1) > 0]
+        print('done', time.time()-t0)
+        print('med mask', end=' ')
+        self.med_mask = self._make_med_mask(med)#a virer
+        print('done', time.time()-t0)
+        self.ts = timeseries
+
+        dropcols = [c for c in timeseries.columns if c not in list(self.cols['blended'].values) + [self.idx_col]]
+        print('resampling', end=' ')
+        
+        #TODO : replace resampling using cross and outer join coalesce
+        #make index using polars 
+        #llf.join(idx, on=['patient_int', 'time'], how='outer_coalesce')
+        self.chunk = (timeseries
+                      .drop(columns=dropcols)
+                      .pipe(self._resampling)
+                      .pipe(self._mask)
+                      .join(self.med_mask,
+                            how='outer')
+                      .pipe(self._add_hour,
+                            admission_hours=admission_hours)
+                      .reindex(self.index_start1)
+                      .reset_index())
+        print('done', time.time()-t0)
         self.chunk = (pd.concat([self.chunk, self.column_template])
                       .astype(self.dtypes))
 
         if stop_at_first_chunk:
             raise Exception('Stopped after 1st chunk, deactivate '
                             '"stop_at_first_chunk" to keep running.')
-        ts_savepath = f'{self.partiallyprocessed_ts_dir}/{self.dataset}_{chunk_number}/'
-        self.save_timeseries(self.chunk, ts_savepath)
+        ts_savepath = f'{self.partiallyprocessed_ts_dir}/{self.dataset}_{chunk_number}.parquet'
+        self.save(self.chunk, ts_savepath)
 
     def harmonize_columns(self,
                               table,
@@ -148,7 +171,7 @@ class TimeseriesProcessor(DataProcessor):
                               col_var=None,
                               col_value=None):
         
-        mapping = {k: v for k, v in {col_id: self.idx_col,
+        mapping = {k: v for k, v in {col_id: self.idx_col_int,
                                      col_var: self.col_variable,
                                      col_time: self.time_col,
                                      col_value: self.col_value}.items()
@@ -156,10 +179,18 @@ class TimeseriesProcessor(DataProcessor):
         
         return table.rename(mapping)
 
+
+    def add_prefixed_pid(self, lf):
+        lf = lf.with_columns(
+            (self.dataset+'-'+pl.col(self.idx_col_int).cast(pl.String)).alias(self.idx_col)
+            )
+        return lf
+            
+
     def filter_tables(self,
                       table,
                       kept_variables=None,
-                      kept_stays=None,
+                      kept_stays=None
                       ):
         """
         This function harmonizes the column names in the input table.
@@ -175,14 +206,12 @@ class TimeseriesProcessor(DataProcessor):
             if kept_variables is not None:
                 filters.append(pl.col(self.col_variable).is_in(kept_variables))
             if kept_stays is not None:
-                filters.append(pl.col(self.idx_col).is_in(kept_stays))
+                filters.append(pl.col(self.idx_col_int).is_in(kept_stays))
             return filters
         
+
         table = (table
                  .filter(_filters(kept_variables, kept_stays))
-                 .with_columns(
-                     (self.dataset+'-'+pl.col(self.idx_col).cast(pl.String)).alias(self.idx_col)
-                     )
                  )
 
         return table
@@ -199,6 +228,14 @@ class TimeseriesProcessor(DataProcessor):
         ts = ts.set_index(cols_index)
         return ts
         
+    def _pl_get_variables_from_long_format(self, lf_tsver):
+        ver_variables = (lf_tsver
+                         .select(pl.col('variable').unique())
+                         .filter(pl.col('variable').is_in(self.cols[self.dataset]))
+                         .collect().to_numpy().flatten()
+                         .tolist())
+        return ver_variables
+    
     def _get_variables_from_long_format(self, ts_ver):
         """
         Returns the list of variables that are found in ts_ver AND in 
@@ -225,98 +262,80 @@ class TimeseriesProcessor(DataProcessor):
                                        .drop_duplicates()
                                        .sort_values())
         return unique_patients
+    
+    
+    def pl_format_meds(self, med):
+        med = (med
+               .pipe(self.add_prefixed_pid)
+               .with_columns(
+                   pl.col('start').cast(int),    
+                   pl.col('end').cast(int),    
+                   )
+               )
+        med_savepath = self.formatted_med_dir + self.dataset + ".parquet"
+        self.save(med, med_savepath)
+        return med
+    
+    def pl_format_timeseries(self,
+                             lf_tsver=None,
+                             lf_tshor=None,
+                             chunk_number=None):
         
-    def format_raw_data(self,
-                        ts_ver=None,
-                        ts_hor=None,
-                        med=None,
-                        chunk_number=None):
-        """
-        This function creates the data for the raw blendedICU dataset. 
-        ts_ver:  
-            DataFrame in long format: all variable names are in a single
-            column. 
-        ts_hor: 
-            DataFrame in wide format: all variables have a dedicated column
-        med: 
-            Medication DataFrame produced by the medicationprocessor.
+        '''There is a much better way to do what format_raw_data does.'''
+        
+        cols_index = {self.idx_col_int: int, self.time_col: int}
+        pl_cols_index = [pl.col(self.idx_col_int), pl.col(self.time_col)]
+        if lf_tshor is None:
+            lf_tshor = pl.LazyFrame(schema=cols_index|{self.idx_col: str})
+        if lf_tsver is None:
+            lf_tsver = pl.LazyFrame(schema=cols_index | {'variable':str, 'value': str, self.idx_col: str})
+
+        lf_tsver_pivoted = self.pl_lazypivot(lf_tsver,
+                                             index=pl_cols_index,
+                                             columns=pl.col('variable'),
+                                             values=pl.col('value'),
+                                             unique_column_names=self.kept_ts)
+
+        variables = set(lf_tsver_pivoted.columns).union(set(lf_tshor.columns)) - {self.idx_col, self.time_col}
+
+        colsminmax = {k: v for k, v in self.cols_minmax.items() if k in variables}
+
+        df_ts = (lf_tsver_pivoted
+                  .join(lf_tshor, on=pl_cols_index, how='outer_coalesce')
+                  .with_columns(
+                      [pl.col(variable).clip(lower_bound=colsminmax[variable]['user_min'],
+                                             upper_bound=colsminmax[variable]['user_max'])
+                       for variable in colsminmax]
+                      )
+                  .rename({old: new for old, new in self.col_mapping.items() if old in variables})
+                  .pipe(self.pl_harmonizer)
+                  .pipe(self._pl_compute_GCS)
+                  .pipe(self.add_prefixed_pid)
+                  )
+
+        if chunk_number is None:
+            ts_savepath = self.formatted_ts_dir + self.dataset + ".parquet"
+        else :
+            print('Collecting...')
+            df_ts = df_ts.collect(streaming=True)
+            ts_savepath = self.formatted_ts_dir + self.dataset + f"_{chunk_number}.parquet"
             
-        All timeseries are converted to wide format and concatenated in a 
-        single DataFrame.
-        A parquet file per patient is saved into the formatted_timeseries
-        directory. 
+        self.save(df_ts, ts_savepath)
+        return df_ts
+
+    
+    @staticmethod
+    def pl_lazypivot(lf, index, columns, values, unique_column_names):
+
+        lf = (lf
+              .group_by(index)
+              .agg(
+                     values.filter(columns==col).mean().alias(col) for col in unique_column_names
+                  )
+              )
         
-        The medication DataFrame is already properly formatted. A parquet file
-        per patient is saved into the formatted_medications directory.
-        """
-        cols_index = [self.idx_col, self.time_col]
-
-        if ts_hor is None:
-            ts_hor = pd.DataFrame(columns=cols_index)
-        if ts_ver is None:
-            ts_ver = pd.DataFrame(columns=cols_index+['variable', 'value'])
-
-        ts_ver = (ts_ver.pipe(self._numericize_cols)
-                  .pipe(self._set_patient_time_index, cols_index=cols_index))
+        return lf
         
-        ts_hor = self._set_patient_time_index(ts_hor, cols_index)
-
-        ver_variables = self._get_variables_from_long_format(ts_ver)
-
-        unique_patients = self._get_unique_patients(ts_ver, ts_hor, med)
-
-        ts_ver, ts_hor = self._add_missing_patients(ts_ver,
-                                                    ts_hor,
-                                                    unique_patients,
-                                                    cols_index)
-
-        ts_hor = ts_hor.groupby(level=('patient', 'time')).mean()
-
-        ts_ver = self._extract_variables(ts_ver, ver_variables)
-
-        timeseries = (ts_ver.join(ts_hor, how='outer')
-                            .pipe(self._convert_col_dtypes)
-                            .pipe(self._clip_user_minmax)
-                            .rename(columns=self.col_mapping)
-                            .pipe(self.harmonizer)
-                            .pipe(self._compute_GCS)
-                            .reset_index())
-
-        dtypes = ({v: tpe for v, tpe in self.dtypes.items() if v in timeseries.columns}
-                  | {'time': np.float32, 'patient': str})
-
-        timeseries = timeseries.astype(dtypes)
-        
-        med = (med.astype({'variable': 'category',
-                           'start': int,
-                           'end': int,
-                           'value': int})
-               .merge(timeseries.patient.drop_duplicates(),
-                      on='patient', how='outer'))
-
-        ts_schema = pa.schema({k:v for k,v in self.pyarrow_schema_dict.items() 
-                                    if k in timeseries.columns})
-
-        med_schema = pa.schema({'patient': pa.string(),
-                                'original_drugname': pa.string(),
-                                'variable': pa.string(),
-                                'start': pa.float32(),
-                                'end': pa.float32(),
-                                'value': pa.float32()})
-
-        ts_savepath = f'{self.formatted_ts_dir}/{self.dataset}_{chunk_number}/'
-        med_savepath = f'{self.formatted_med_dir}/{self.dataset}_{chunk_number}/'
-
-        self.save_timeseries(timeseries,
-                             ts_savepath, 
-                             pyarrow_schema=ts_schema)
-
-        self.save_timeseries(med,
-                             med_savepath,
-                             pyarrow_schema=med_schema)
-
-        return timeseries.set_index(cols_index)
-
 
     def _cols(self):
         """
@@ -388,92 +407,101 @@ class TimeseriesProcessor(DataProcessor):
             return list(iterdir)
         return iterdir
 
-    def _celsius_to_farenheit(self, series):
-        return (series-32)/1.8
 
-    #TODO : use a proper unit converter.
+    def _pl_harmonize_hirid(self, lf):
+        lf = lf.with_columns(
+            pl.col('hemoglobin').mul(10)
+            )
+        return lf
 
-    def _harmonize_amsterdam(self, df):
-        df['O2_arterial_saturation'] = df['O2_arterial_saturation']*100
-        df['hemoglobin'] = df['hemoglobin']*1.613
-
-        # The numericitems table indicates that all
-        # tidal volume settings are in mL.
-        # however there are inconsistent units in the data.
-        idx_mult1000 = df['tidal_volume_setting'] < 1
-        idx_nan = ((df['tidal_volume_setting'] > 1)
-                   & (df['tidal_volume_setting'] < 3))
-        df.loc[idx_mult1000, 'tidal_volume_setting'] *= 1000
-        df.loc[idx_nan, 'tidal_volume_setting'] = np.nan
-        return df
-
-    def _harmonize_hirid(self, df):
-        df['hemoglobin'] = df['hemoglobin']/10
-        return df
-
-    def _harmonize_eicu(self, df):
+    def _pl_harmonize_amsterdam(self, lf):
         """
         Conversion constants were taken from:
         https://www.wiv-isp.be/qml/uniformisation-units/conversion-table/tableconvertion-chimie.pdf
         """
-        df['calcium'] = df['calcium']*0.25
-        df['magnesium'] = df['magnesium']*0.411
-        df['blood_glucose'] = df['blood_glucose']*0.0555
-        df['creatinine'] = df['creatinine']*88.40
-        df['bilirubine'] = df['bilirubine']*17.39
-        df['albumin'] = df['albumin']*10
-        df['blood_urea_nitrogen'] = df['blood_urea_nitrogen']*0.357
-        df['phosphate'] = df['phosphate']*0.323
-        # In ~2% cases, temperature is in farenheit.
-        temp_idx = (df.temperature > 80, 'temperature')
-        df.loc[temp_idx] = self._celsius_to_farenheit(df.loc[temp_idx])
-        return df
+        # The numericitems table indicates that all
+        # tidal volume settings are in mL.
+        # however there are inconsistent units in the data.
+        lf = lf.with_columns(
+            pl.col('O2_arterial_saturation').mul(100),
+            pl.col('hemoglobin').mul(1.613),
+            (pl.when(pl.col('tidal_volume_setting')<1)
+             .then(pl.col('tidal_volume_setting').mul(1000))
+             .otherwise(pl.col('tidal_volume_setting'))),
+            (pl.when((pl.col('tidal_volume_setting')>1) 
+                     | (pl.col('tidal_volume_setting')<3)  )
+             .then(pl.lit(None))
+             .otherwise(pl.col('tidal_volume_setting')))
+            )
+        return lf
 
-    def _harmonize_mimic3(self, df):
-        """
-        Unit conversion was necessary mostly for lab variables.
-        """
-        df['temperature'] = self._celsius_to_farenheit(df['temperature'])
-        df['blood_glucose'] = df['blood_glucose']*0.0555
-        df['magnesium'] = df['magnesium']*0.411
-        df['creatinine'] = df['creatinine']*88.40
-        df['calcium'] = df['calcium']*0.25
-        df['bilirubine'] = df['bilirubine']*17.39
-        df['albumin'] = df['albumin']*10.
-        df['blood_urea_nitrogen'] = df['blood_urea_nitrogen']*0.357
-        df['phosphate'] = df['phosphate']*0.323
-        return df
 
-    def _harmonize_mimic4(self, df):
-        """
-        Unit conversion was necessary mostly for lab variables.
-        """
-        df['temperature'] = self._celsius_to_farenheit(df['temperature'])
-        df['blood_glucose'] = df['blood_glucose']*0.0555
-        df['magnesium'] = df['magnesium']*0.411
-        df['creatinine'] = df['creatinine']*88.40
-        df['calcium'] = df['calcium']*0.25
-        df['bilirubine'] = df['bilirubine']*17.39
-        df['albumin'] = df['albumin']*10.
-        df['blood_urea_nitrogen'] = df['blood_urea_nitrogen']*0.357
-        df['phosphate'] = df['phosphate']*0.323
-        return df
+    def _pl_harmonize_eicu(self, lf):
+
+        lf = lf.with_columns(
+            #TODO : put this on.
+            #(pl.when(pl.col('temperature')>80)
+            #.then((pl.col('temperature')-32).truediv(1.8))
+            #.otherwise(pl.col('temperature'))),
+            pl.col('calcium').mul(0.25),
+            pl.col('magnesium').mul(0.411),
+            pl.col('blood_glucose').mul(0.0555),
+            pl.col('creatinine').mul(88.40),
+            pl.col('bilirubine').mul(17.39),
+            pl.col('albumin').mul(10),
+            pl.col('blood_urea_nitrogen').mul(0.357),
+            pl.col('phosphate').mul(0.323)
+            )
+
+        return lf
+
+    def _pl_harmonize_mimic3(self, lf):
+        lf = lf.with_columns(
+            (pl.col('temperature')-32).truediv(1.8),
+            pl.col('blood_glucose').mul(0.0555),
+            pl.col('magnesium').mul(0.411),
+            pl.col('creatinine').mul(88.40),
+            pl.col('calcium').mul(0.25),
+            pl.col('bilirubine').mul(17.39),
+            pl.col('albumin').mul(10.),
+            pl.col('blood_urea_nitrogen').mul(0.357),
+            pl.col('phosphate').mul(0.323))  
+        return lf
+
+    def _pl_harmonize_mimic4(self, lf):
+        lf = lf.with_columns(
+            (pl.col('temperature')-32).truediv(1.8),
+            pl.col('blood_glucose').mul(0.0555),
+            pl.col('magnesium').mul(0.411),
+            pl.col('creatinine').mul(88.40),
+            pl.col('calcium').mul(0.25),
+            pl.col('bilirubine').mul(17.39),
+            pl.col('albumin').mul(10.),
+            pl.col('blood_urea_nitrogen').mul(0.357),
+            pl.col('phosphate').mul(0.323))        
+        
+        return lf
 
     def _resampling(self, df):
         """
         Resamples the input dataframe and applies the aggregate functions 
         that are specified in the input timeseries_variables.csv file.
         """
+        
         aggregates = self.aggregates_blended.loc[df.columns]
+
         df = self.df_resampler.join(df, how='outer')
 
         df['new_time'] = df.groupby(level=0).new_time.ffill()
         
-        df = (df.droplevel(1)
+        df = (df.droplevel(self.time_col)
                 .rename(columns={'new_time': self.time_col})
                 .set_index(self.time_col, append=True)
-                .groupby(level=[0, 1])
-                .agg(aggregates))
+                .groupby(level=[self.idx_col_int, self.time_col])
+                .agg(aggregates)
+                )
+        if self.idx_col in df.columns:
+            df[self.idx_col] = df[self.idx_col].bfill()
         return df
 
     def _fillna(self, df):
@@ -504,24 +532,29 @@ class TimeseriesProcessor(DataProcessor):
         Produces a mask of drug exposure from the list of starts and ends of 
         medications.
         """
+        med = med.drop(columns=self.idx_col)
         self.med = med
 
-        med_starts = med.set_index(['patient', 'start'])
-        med_ends = med.set_index(['patient', 'end'])
-        med_ends_resampled = (med_ends.pipe(self._extract_variables,
-                                            kept_variables=self.kept_med)
-                              .rename_axis([self.idx_col, self.time_col])
+        idx_cols = [self.idx_col_int, self.time_col]
+
+        med_starts = med.set_index([self.idx_col_int, 'start'])
+        med_ends = med.set_index([self.idx_col_int, 'end'])
+        med_ends_resampled = (med_ends
+                              .pipe(self._extract_variables,
+                                    kept_variables=self.kept_med)
+                              .rename_axis(idx_cols)
                               .pipe(self._resampling)
                               .multiply(0))
         
-        med_starts_resampled = (med_starts.pipe(self._extract_variables,
-                                                kept_variables=self.kept_med)
-                                .rename_axis([self.idx_col, self.time_col])
+        med_starts_resampled = (med_starts
+                                .pipe(self._extract_variables,
+                                      kept_variables=self.kept_med)
+                                .rename_axis(idx_cols)
                                 .pipe(self._resampling))
 
         return (pd.concat([med_starts_resampled, med_ends_resampled])
-                .groupby(level=[0, 1]).max()
-                .groupby(level=0).ffill().fillna(0))
+                .groupby(level=idx_cols).agg({col: 'max' for col in med_starts_resampled.columns})
+                .groupby(level=self.idx_col_int).ffill().fillna(0))
 
     def _clip_user_minmax(self, df):
         """
@@ -551,8 +584,7 @@ class TimeseriesProcessor(DataProcessor):
         timeseries_variable.csv file. 
         Values that are not castable to float by pd.to_numeric will be dropped.
         """
-        idx_numcols = self.cols['is_numeric'] == 1
-        self.numeric_cols = self.cols.loc[idx_numcols, self.dataset].values
+        self.numeric_cols = self.cols.loc[self.cols['is_numeric'] == 1, self.dataset].values
 
         idx_numeric = ts_ver.variable.isin(self.numeric_cols)
         ts_ver.loc[idx_numeric, 'value'] = (pd.to_numeric(ts_ver.loc[idx_numeric, 'value'],
@@ -560,7 +592,7 @@ class TimeseriesProcessor(DataProcessor):
         ts_ver = ts_ver.dropna()
         return ts_ver
 
-    def _compute_GCS(self, df):
+    def _pl_compute_GCS(self, lf):
         """
         Some databases report the three components of the GCS score but do not 
         have a variable for the total GCS score. This function computes the 
@@ -574,13 +606,22 @@ class TimeseriesProcessor(DataProcessor):
         glasgow_cols = ['glasgow_coma_score_eye',
                         'glasgow_coma_score_motor',
                         'glasgow_coma_score_verbal']
-        if 'glasgow_coma_score' not in df.columns:
-            df['glasgow_coma_score'] = df[glasgow_cols].sum(axis=1,
-                                                            min_count=3)
-        for glasgow_col in glasgow_cols:
-            if glasgow_col not in df.columns:
-                df[glasgow_col] = np.nan
-        return df
+
+        if 'glasgow_coma_score' not in lf.columns:
+            
+            lf = (lf
+                  .with_columns(
+                      pl.when(~pl.all_horizontal(glasgow_cols).is_null())
+                      .then(pl.sum_horizontal(glasgow_cols))
+                      .otherwise(pl.lit(None))
+                      .alias('glasgow_coma_score')
+                      )
+                  )
+        
+        lf = lf.with_columns(
+                [pl.lit(None).alias(col) for col in glasgow_cols if col not in lf.columns]
+                )
+        return lf 
 
     def _forward_fill(self, df):
         """
@@ -618,6 +659,13 @@ class TimeseriesProcessor(DataProcessor):
         """
         Saves a table to parquet. The user may specify a pyarrow schema.
         """
+        def _save_index(patient_pths, ts_savepath):
+            index_savepath = ts_savepath+'/index.csv'
+            (pd.Series(patient_pths, name='ts_pth')
+             .rename_axis('patient')
+             .to_csv(index_savepath, sep=';'))
+            print(f'  -> saved {index_savepath}')
+            
         Path(ts_savepath).mkdir(exist_ok=True, parents=True)
         print(ts_savepath)
         patient_ts = (timeseries.reset_index(drop=True)
@@ -631,13 +679,6 @@ class TimeseriesProcessor(DataProcessor):
                       pyarrow_schema=pyarrow_schema)
         self._save_index(patient_pths, ts_savepath)
 
-    def _save_index(self, patient_pths, ts_savepath):
-        index_savepath = ts_savepath+'/index.csv'
-        (pd.Series(patient_pths, name='ts_pth')
-         .rename_axis('patient')
-         .to_csv(index_savepath, sep=';'))
-        print(f'  -> saved {index_savepath}')
-        
 
     def _kept_meds(self):
         """convenience function to get the list of included medications."""
@@ -654,7 +695,7 @@ class TimeseriesProcessor(DataProcessor):
                                          columns=cols_index)
 
         # get the timestep of the last value
-        self.last_sample = (observation_times.groupby('patient')['time']
+        self.last_sample = (observation_times.groupby(self.idx_col_int)['time']
                                              .max().astype(int)
                                              .clip(lower=freq+1))
 
@@ -678,7 +719,7 @@ class TimeseriesProcessor(DataProcessor):
                                             len(patients),
                                             self.n_patient_chunk))
 
-    def _extract_variables(self, ts_ver, kept_variables):
+    def _extract_variables(self, ts_ver, kept_variables, join_index=(0,1)):
         """
         ts_ver should have [patient, time] as multiindex
                            [variable, value] as columns
@@ -692,7 +733,7 @@ class TimeseriesProcessor(DataProcessor):
             self.var = var
             
             df = (ts_ver.loc[ts_ver['variable']==var, 'value']
-                  .groupby(level=(0, 1))
+                  .groupby(level=join_index)
                   .agg(self.aggregates.loc[var])
                   .rename(var))
             series.append(df)
@@ -721,7 +762,7 @@ class TimeseriesProcessor(DataProcessor):
         Apply a decaying mask for all timeseries variables.
         """
         mask = (data.notna()
-                    .groupby('patient')
+                    .groupby(self.idx_col_int)
                     .apply(self._apply_mask_decay)
                     .add_suffix('_mask')
                     .droplevel(0))
@@ -756,6 +797,11 @@ class TimeseriesProcessor(DataProcessor):
 
         return timeseries.drop(columns='hour_admitted')
 
-    def get_stay_chunks(self):
-        return np.array_split(self.stays, self.stays.size//self.n_patient_chunk)
+    def get_stay_chunks(self, add_prefix=False, n_patient_chunk=None):
+        n_patients = self.n_patient_chunk if n_patient_chunk is None else n_patient_chunk
+       
+        stays = (np.array([f'{self.dataset}-{s}' for s in self.stays])
+                 if add_prefix
+                 else self.stays)
+        return np.array_split(stays, self.stays.size//n_patients)
         

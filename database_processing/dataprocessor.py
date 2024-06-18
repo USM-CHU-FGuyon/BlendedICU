@@ -56,6 +56,7 @@ class DataProcessor:
 
         self.time_col = 'time'
         self.idx_col = 'patient'
+        self.idx_col_int = 'patient_int'
         self.uniquepid_col = 'uniquepid'
         self.mor_col = 'mortality'
         self.los_col = 'lengthofstay'
@@ -192,13 +193,30 @@ class DataProcessor:
         parent directory if it does not exist.
         """
         Path(savepath).parent.mkdir(parents=True, exist_ok=True)
-        if verbose:
-            print(f'   saving {savepath}')
+
+        if isinstance(df, pl.lazyframe.frame.LazyFrame):
+            if verbose:
+                print(f' --> Sinking {savepath}', end=" ")
+            try:
+                df.sink_parquet(savepath)
+                print('done')
+                return df
+            except pl.exceptions.InvalidOperationError:
+                print('/!\ Sinking failed. Collecting...', end=" ")
+                df = df.collect()
+                print('done.')
+        
         if isinstance(df, pl.dataframe.frame.DataFrame):
+            print(f' --> pl.writing {savepath}', end=" ")
             df.write_parquet(savepath)
-        else:
-            df.to_parquet(savepath, schema=pyarrow_schema)
+            print('done.')
+            return df
+        
+        print(f' --> pd.writing {savepath}', end=" ")
+        df.to_parquet(savepath, schema=pyarrow_schema)
+        print('done.')
         return df
+
 
     def rmdir(self, pth):
         """

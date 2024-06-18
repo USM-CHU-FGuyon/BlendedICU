@@ -21,7 +21,7 @@ class amsterdamTSP(TimeseriesProcessor):
                                              'start',
                                              'end',
                                              'value'))
-        print(self.savepath+gcs_scores_pth)
+
         self.gcs_scores = self.scan(self.savepath+gcs_scores_pth)
         
         self.colnames_med = {
@@ -55,7 +55,7 @@ class amsterdamTSP(TimeseriesProcessor):
     def run(self, reset_dir=None):
         self.reset_dir(reset_dir)
         self.stays = self.get_stays()
-        self.stay_chunks = self.get_stay_chunks()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=5_000)
         
         self.ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)
         self.listitems = self.harmonize_columns(self.lf_listitems, **self.colnames_ts)
@@ -63,26 +63,30 @@ class amsterdamTSP(TimeseriesProcessor):
         
         lf_ts = pl.concat([self.ts, self.listitems], how='diagonal_relaxed')
         
+        lf_med_formatted = self.pl_format_meds(lf_med)
+
         for chunk_number, stays in enumerate(self.stay_chunks):
 
+            print(f'Chunk {chunk_number}')
             self.ts_chunk = (self.filter_tables(lf_ts,
                                            kept_variables=self.kept_ts,
                                            kept_stays=stays)
-                                  .collect(streaming=True)
-                                  .to_pandas())
+                             .collect(streaming=True))
             
-            med_chunk = (self.filter_tables(lf_med,
+            self.med_formatted_chunk = (self.filter_tables(lf_med_formatted,
                                             kept_variables=self.kept_med,
-                                            kept_stays=stays)
-                                  .collect()
-                                  .to_pandas())
+                                            kept_stays=stays))
 
             self.gcs_scores_chunk = (self.filter_tables(self.gcs_scores,
-                                                        kept_stays=stays)
-                                     .collect()
-                                     .to_pandas())
+                                                        kept_stays=stays))
 
-            self.process_tables(ts_ver=self.ts_chunk,
-                                ts_hor=self.gcs_scores_chunk,
-                                med=med_chunk,
-                                chunk_number=chunk_number)
+            ts_formatted_chunk = (self.pl_format_timeseries(lf_tsver=self.ts_chunk.lazy(),
+                                                            lf_tshor=self.gcs_scores_chunk,
+                                                            chunk_number=chunk_number)
+                                  )
+
+            self.newprocess_tables(ts_formatted_chunk,
+                                   med=self.med_formatted_chunk.collect().to_pandas(),
+                                   chunk_number=chunk_number)
+
+

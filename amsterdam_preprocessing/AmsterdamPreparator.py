@@ -67,6 +67,10 @@ class AmsterdamPreparator(DataPreparator):
         self.reset_chunk_idx()
         self.get_labels()
         
+        #col_dose=dose
+        #col_doseunit=doseunit
+        #col_start='start
+        #col_end=end
         drugitems = (pl.scan_parquet(self.drugitems_parquet_pth)
                      .select('admissionid', 'item', 'start')
                      .collect()

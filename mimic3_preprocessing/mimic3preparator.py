@@ -4,6 +4,7 @@ import pandas as pd
 import polars as pl
 
 from database_processing.medicationprocessor import MedicationProcessor
+from database_processing.newmedicationprocessor import NewMedicationProcessor
 from database_processing.datapreparator import DataPreparator
 
 class mimic3Preparator(DataPreparator):
@@ -48,6 +49,7 @@ class mimic3Preparator(DataPreparator):
         self.flat_savepath = self.savepath + 'flat.parquet'
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
+        self.seconds_in_a_day = 24*60*60
         self.col_los = 'LOS'
         self.unit_los = 'day'
         
@@ -66,10 +68,10 @@ class mimic3Preparator(DataPreparator):
                              how='left')
                        .with_columns(
                            pl.col('INTIME').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                           pl.col('ICUSTAY_ID').cast(pl.Int64),
-                           pl.col('HADM_ID').cast(pl.Int64),
-                       )
-                       .collect())
+                           pl.duration(seconds=pl.col('LOS').mul(self.seconds_in_a_day)).alias('LOS'),
+                           pl.col('ICUSTAY_ID').cast(pl.Int32),
+                           pl.col('HADM_ID').cast(pl.Int32),
+                       ))
         return df_icustays
     
     
@@ -115,7 +117,8 @@ class mimic3Preparator(DataPreparator):
                                               'VALUE': str,
                                               'WARNING': str,
                                               'ERROR': str,
-                                              'RESULTSTATUS': str})
+                                              'RESULTSTATUS': str},
+                                  chunksize=1e7)
     
 
     def _fetch_heights_weights(self):
@@ -237,52 +240,63 @@ class mimic3Preparator(DataPreparator):
         inputevents_mv = (pl.scan_parquet(self.inputevents_mv_parquet_pth)
                           .select('ICUSTAY_ID',
                                 'STARTTIME',
-                                'ITEMID')
-                          .rename({'STARTTIME': 'CHARTTIME'}))
+                                'ENDTIME',
+                                'ITEMID',
+                                'AMOUNT',
+                                'AMOUNTUOM')
+                          .rename({'STARTTIME': 'start',
+                                   'ENDTIME': 'end'}))
         
         inputevents_cv = (pl.scan_parquet(self.inputevents_cv_parquet_pth)
                           .select('ICUSTAY_ID',
-                                'CHARTTIME',
-                                'ITEMID'))
+                                  'CHARTTIME',
+                                  'ITEMID',
+                                  'AMOUNT',
+                                  'AMOUNTUOM',
+                                  'ORIGINALROUTE')
+                          .rename({'CHARTTIME': 'start'}))
         
         d_items = pl.scan_parquet(self.d_items_parquet_pth)
 
-        inputevents = pl.concat([inputevents_cv, inputevents_mv])
+        inputevents = pl.concat([inputevents_cv, inputevents_mv], how='diagonal')
 
         df_inputevents = (inputevents
                           .join(d_items.select('ITEMID', 'LABEL'), on='ITEMID')
                           .drop('ITEMID')
-                          .rename({'CHARTTIME': 'time'})
                           .drop_nulls('ICUSTAY_ID')
                           .with_columns(
-                              pl.col('ICUSTAY_ID').cast(pl.Int32())
+                              pl.col('ICUSTAY_ID').cast(pl.Int32),
+                              pl.col('start').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                              pl.col('end').str.to_datetime("%Y-%m-%d %H:%M:%S"),
                               )
                           )
         
         return df_inputevents
 
-
     def gen_medication(self):
-        inputevents = self._load_inputevents().collect().to_pandas()
-
-        icustays = pd.read_parquet(self.icustays_parquet_pth,
-                                   columns=['ICUSTAY_ID', 'INTIME', 'LOS'])
-
-        self.mp = MedicationProcessor('mimic3',
-                                      icustays,
-                                      col_pid='ICUSTAY_ID',
-                                      col_los='LOS',
-                                      col_med='LABEL',
-                                      col_time='time',
-                                      col_admittime='INTIME',
-                                      offset_calc=True,
-                                      unit_offset='second',
-                                      unit_los='day')
+        inputevents = self._load_inputevents()
+        icustays = (self.icustays.lazy()
+                    .select('ICUSTAY_ID', 'INTIME', 'LOS'))
         
-        self.med = self.mp.run(inputevents)
-        return self.save(self.med, self.med_savepath)
-    
-    
+        self.nmp = NewMedicationProcessor('mimic3',
+                                          lf_med=inputevents,
+                                          lf_labels=icustays,
+                                          col_pid='ICUSTAY_ID',
+                                          col_med='LABEL',
+                                          col_start='start',
+                                          col_end='end',
+                                          col_los='LOS',
+                                          col_dose='AMOUNT',
+                                          col_dose_unit='AMOUNTUOM',
+                                          col_route='ORIGINALROUTE',
+                                          col_admittime='INTIME',
+                                          unit_los='day',
+                                          offset_calc=True
+                                        )
+        med = self.nmp.run()
+        self.save(med, self.med_savepath)
+        
+
     def gen_timeseriesoutputs(self):
         self.get_labels(lazy=True)
         ditems = pl.scan_parquet(self.d_items_parquet_pth)

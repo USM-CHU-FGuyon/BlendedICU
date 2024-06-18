@@ -15,6 +15,9 @@ hirid_prep = hiridPreparator(
     admissions_path='reference_data/general_table.csv',
     imputedstage_path='imputed_stage/parquet/')
 
+hirid_prep.raw_tables_to_parquet()
+
+hirid_prep.init_gen()
 hirid_prep.gen_labels()
 hirid_prep.gen_medication()
 hirid_prep.gen_timeseries()
