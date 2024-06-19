@@ -100,20 +100,11 @@ class TimeseriesProcessor(DataProcessor):
                          chunk_number=None):
         import time
         t0 = time.time()
-        t_max = self.upper_los*24*3600
         print('filtering...', end=" ")
-        
-        
-        med = (med
-               .filter(
-                   (pl.col('start')>=0) &
-                   pl.col('end')< t_max
-                   )
-               )
         
         timeseries = (timeseries
                       .filter(
-                          (pl.col(self.time_col)>=0) & (pl.col(self.time_col)<t_max),
+                          (pl.col(self.time_col)>=0),
                           )
                       )
 
@@ -123,9 +114,6 @@ class TimeseriesProcessor(DataProcessor):
         timeseries = timeseries.set_index([self.idx_col_int, self.time_col])
         self.ts = timeseries
 
-    
-
-
         print('done.', time.time()-t0)
         print('build index', end=' ')
         self.index = self._build_index(timeseries,
@@ -133,9 +121,7 @@ class TimeseriesProcessor(DataProcessor):
  
         self.index_start1 = self.index[self.index.get_level_values(1) > 0]
         print('done', time.time()-t0)
-        print('med mask', end=' ')
-        self.med_mask = self._make_med_mask(med)#a virer
-        print('done', time.time()-t0)
+
         self.ts = timeseries
 
         dropcols = [c for c in timeseries.columns if c not in list(self.cols['blended'].values) + [self.idx_col]]
@@ -147,9 +133,6 @@ class TimeseriesProcessor(DataProcessor):
         self.chunk = (timeseries
                       .drop(columns=dropcols)
                       .pipe(self._resampling)
-                      .pipe(self._mask)
-                      .join(self.med_mask,
-                            how='outer')
                       .pipe(self._add_hour,
                             admission_hours=admission_hours)
                       .reindex(self.index_start1)
@@ -209,7 +192,6 @@ class TimeseriesProcessor(DataProcessor):
                 filters.append(pl.col(self.idx_col_int).is_in(kept_stays))
             return filters
         
-
         table = (table
                  .filter(_filters(kept_variables, kept_stays))
                  )
@@ -267,10 +249,6 @@ class TimeseriesProcessor(DataProcessor):
     def pl_format_meds(self, med):
         med = (med
                .pipe(self.add_prefixed_pid)
-               .with_columns(
-                   pl.col('start').cast(int),    
-                   pl.col('end').cast(int),    
-                   )
                )
         med_savepath = self.formatted_med_dir + self.dataset + ".parquet"
         self.save(med, med_savepath)
@@ -386,13 +364,14 @@ class TimeseriesProcessor(DataProcessor):
                              'nonnumeric values.')
         return df
 
-    def _column_template(self):
+    def _column_template(self, meds=False):
         """
         create an empty DataFrame with a column for each variable. This 
         ensures that all chunks have the same columns, even if 
         a medication or timeseries variables was not found in some chunks.
         """
-        cols = pd.concat([self.cols['blended'], pd.Series(['patient'])])
+        cols = self.cols if meds else self.cols.loc[self.cols.categories!='drug']
+        cols = pd.concat([cols['blended'], pd.Series(['patient'])])
         return pd.DataFrame(columns=cols).set_index('patient')
 
     def ls(self, pth, sort=True, aslist=True):
@@ -439,10 +418,10 @@ class TimeseriesProcessor(DataProcessor):
     def _pl_harmonize_eicu(self, lf):
 
         lf = lf.with_columns(
-            #TODO : put this on.
-            #(pl.when(pl.col('temperature')>80)
-            #.then((pl.col('temperature')-32).truediv(1.8))
-            #.otherwise(pl.col('temperature'))),
+            pl.when(pl.col('temperature')>80)
+            .then((pl.col('temperature')-32).truediv(1.8))
+            .otherwise(pl.col('temperature'))
+            .alias('temperature'),
             pl.col('calcium').mul(0.25),
             pl.col('magnesium').mul(0.411),
             pl.col('blood_glucose').mul(0.0555),
@@ -527,35 +506,6 @@ class TimeseriesProcessor(DataProcessor):
         self.medians = self.clipping_quantiles[1]
         return df.fillna(self.medians)
 
-    def _make_med_mask(self, med):
-        """
-        Produces a mask of drug exposure from the list of starts and ends of 
-        medications.
-        """
-        med = med.drop(columns=self.idx_col)
-        self.med = med
-
-        idx_cols = [self.idx_col_int, self.time_col]
-
-        med_starts = med.set_index([self.idx_col_int, 'start'])
-        med_ends = med.set_index([self.idx_col_int, 'end'])
-        med_ends_resampled = (med_ends
-                              .pipe(self._extract_variables,
-                                    kept_variables=self.kept_med)
-                              .rename_axis(idx_cols)
-                              .pipe(self._resampling)
-                              .multiply(0))
-        
-        med_starts_resampled = (med_starts
-                                .pipe(self._extract_variables,
-                                      kept_variables=self.kept_med)
-                                .rename_axis(idx_cols)
-                                .pipe(self._resampling))
-
-        return (pd.concat([med_starts_resampled, med_ends_resampled])
-                .groupby(level=idx_cols).agg({col: 'max' for col in med_starts_resampled.columns})
-                .groupby(level=self.idx_col_int).ffill().fillna(0))
-
     def _clip_user_minmax(self, df):
         """
         Clips the values to the user-specified min and max in the 
@@ -569,28 +519,6 @@ class TimeseriesProcessor(DataProcessor):
         df[num_cols] = df[num_cols].clip(lower=lower, upper=upper)
         return df
 
-    def _convert_col_dtypes(self, df):
-        """
-        Convert numeric cols to float, a this point every value in the numeric
-        columns is a float, but the column dtype in the dataframe may still be 
-        'object'
-        """
-        numeric_cols = set(df.columns).intersection(self.numeric_cols)
-        return df.astype({c: float for c in numeric_cols})
-
-    def _numericize_cols(self, ts_ver):
-        """
-        Convert to numeric all columns that were specified as numeric in the 
-        timeseries_variable.csv file. 
-        Values that are not castable to float by pd.to_numeric will be dropped.
-        """
-        self.numeric_cols = self.cols.loc[self.cols['is_numeric'] == 1, self.dataset].values
-
-        idx_numeric = ts_ver.variable.isin(self.numeric_cols)
-        ts_ver.loc[idx_numeric, 'value'] = (pd.to_numeric(ts_ver.loc[idx_numeric, 'value'],
-                                                          errors='coerce'))  
-        ts_ver = ts_ver.dropna()
-        return ts_ver
 
     def _pl_compute_GCS(self, lf):
         """
@@ -633,24 +561,6 @@ class TimeseriesProcessor(DataProcessor):
             return df.groupby('patient').ffill()
         return df
 
-    def _add_missing_patients(self,
-                              ts_ver,
-                              ts_hor,
-                              unique_patients,
-                              cols_index):
-        '''
-        Adds a line of nan at t=-1 for every patient.
-        this ensures that every patientid appears in the dataframe.
-        '''
-        index = pd.MultiIndex.from_tuples([(p, -1) for p in unique_patients],
-                                          names=cols_index)
-
-        df_patients = pd.DataFrame(index=index)
-
-        ts_ver = ts_ver.join(df_patients, how='outer')
-        ts_hor = ts_hor.join(df_patients, how='outer')
-
-        return ts_ver, ts_hor
 
     def save_timeseries(self,
                         timeseries,
@@ -741,32 +651,6 @@ class TimeseriesProcessor(DataProcessor):
             return pd.concat(series, axis=1)
         else:
             return pd.DataFrame(index=self.mux)
-
-    def _apply_mask_decay(self, mask_bool, decay_rate=4/3):
-        """
-        This decaying mask can be used in a model to get an idea of the
-        staleness of a measurement. Its value is 1 at the time of measures
-        and decays towards zero as the measure gets older.
-        """
-        mask = mask_bool.astype(int).replace({0: np.nan})
-        inv_mask_bool = ~mask_bool
-        inv_mask_cumsum = inv_mask_bool.cumsum()
-        count_non_measurements = (inv_mask_cumsum
-                                  - inv_mask_cumsum.where(mask_bool).ffill().fillna(0))
-        decay_mask = (mask.ffill().fillna(0)
-                      / (count_non_measurements * decay_rate).replace(0, 1))
-        return decay_mask
-
-    def _mask(self, data):
-        """
-        Apply a decaying mask for all timeseries variables.
-        """
-        mask = (data.notna()
-                    .groupby(self.idx_col_int)
-                    .apply(self._apply_mask_decay)
-                    .add_suffix('_mask')
-                    .droplevel(0))
-        return pd.concat([data, mask], axis=1)
 
     def _add_hour(self, timeseries, admission_hours):
         '''

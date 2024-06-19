@@ -2,8 +2,8 @@ from pathlib import Path
 
 import polars as pl
 
-from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
+from database_processing.newmedicationprocessor import NewMedicationProcessor
 
 
 class mimic4Preparator(DataPreparator):
@@ -51,7 +51,6 @@ class mimic4Preparator(DataPreparator):
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
         self.col_los = 'los'
-        self.unit_los = 'day'
 
         
     def raw_tables_to_parquet(self):
@@ -98,7 +97,8 @@ class mimic4Preparator(DataPreparator):
                        .join(icustays, on='hadm_id')
                        .with_columns(
                            pl.col('intime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                           pl.col('outtime').str.to_datetime("%Y-%m-%d %H:%M:%S")
+                           pl.col('outtime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                           pl.duration(seconds=pl.col(self.col_los).mul(self.seconds_in_a_day)).alias(self.col_los)
                            )
                        .collect())
         
@@ -188,19 +188,23 @@ class mimic4Preparator(DataPreparator):
         return self.save(df_flat, self.flat_savepath)
 
     def _load_inputevents(self):
-        print('o Inputevents')
         inputevents = pl.scan_parquet(self.inputevents_parquet_pth)
         d_items = pl.scan_parquet(self.d_items_parquet_pth)
         
-        df_inputevents = (inputevents
-                          .select(['stay_id',
-                                   'starttime',
-                                   'itemid'])
-                          .join(d_items.select(['itemid', 'label']), on='itemid')
-                          .drop('itemid')
-                          .rename({'starttime': 'time'})
-                          .collect())
-        return df_inputevents
+        lf_inputevents = (inputevents
+                          .select('stay_id',
+                                  'starttime',
+                                  'itemid',
+                                  'endtime',
+                                  'amount',
+                                  'amountuom')
+                          .with_columns(
+                              pl.col('starttime').str.to_datetime("%Y-%m-%d %H:%M:%S"),
+                              pl.col('endtime').str.to_datetime("%Y-%m-%d %H:%M:%S")
+                              )
+                          .join(d_items.select('itemid', 'label'), on='itemid')
+                          .drop('itemid'))
+        return lf_inputevents
         
     def gen_diagnoses(self):
         print('o Diagnoses')
@@ -223,31 +227,30 @@ class mimic4Preparator(DataPreparator):
                         .collect())
         return self.save(df_diagnoses, self.diag_savepath)
     
-        
+    
     def gen_medication(self):
-        """
-        Medication can be found in the inputevents table.
-        """
-        print('o Medication')
-        inputevents = self._load_inputevents().to_pandas()
-        icustays = self.icustays.to_pandas()
-    
-        #col_route=
-        #col dosage=amount
-        #col_unit=amountuom
-    
-        self.mp = MedicationProcessor('mimic4',
-                                      icustays,
-                                      col_pid='stay_id',
-                                      col_los='los',
-                                      col_med='label',
-                                      col_time='time',
-                                      col_admittime='intime',
-                                      offset_calc=True,
-                                      unit_offset='second',
-                                      unit_los='day')
-        self.med = self.mp.run(inputevents)
-        return self.save(self.med, self.med_savepath)
+        print('o Inputevents')
+        inputevents = self._load_inputevents()
+        icustays = (self.icustays.lazy()
+                    .select('stay_id', 'intime', 'los'))
+        
+        self.nmp = NewMedicationProcessor('mimic4',
+                                          lf_med=inputevents,
+                                          lf_labels=icustays,
+                                          col_pid='stay_id',
+                                          col_med='label',
+                                          col_start='starttime',
+                                          col_end='endtime',
+                                          col_los='los',
+                                          col_dose='amount',
+                                          col_dose_unit='amountuom',
+                                          col_route=None,
+                                          col_admittime='intime',
+                                          offset_calc=True
+                                        )
+        med = self.nmp.run()
+        self.save(med, self.med_savepath)
+        
 
     def gen_labels(self):
         print('o Labels')

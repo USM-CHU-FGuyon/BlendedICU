@@ -201,8 +201,9 @@ class DataProcessor:
                 df.sink_parquet(savepath)
                 print('done')
                 return df
-            except pl.exceptions.InvalidOperationError:
-                print('/!\ Sinking failed. Collecting...', end=" ")
+            except pl.exceptions.InvalidOperationError as e:
+                print(f'/!\ Sinking failed. \n{e}\n       ---> Collecting...',
+                      end=" ")
                 df = df.collect()
                 print('done.')
         

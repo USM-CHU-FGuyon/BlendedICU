@@ -3,9 +3,8 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 
-from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
-
+from database_processing.newmedicationprocessor import NewMedicationProcessor
 
 class hiridPreparator(DataPreparator):
     def __init__(
@@ -34,7 +33,6 @@ class hiridPreparator(DataPreparator):
         self._check_files_untarred()
         
         self.ts_savepth = self.savepath + 'timeseries.parquet'
-        self.pharma_savepth = self.savepath+'/pharma_1000_patient_chunks/'
         
         self.weights = None
         self.heights = None
@@ -49,9 +47,9 @@ class hiridPreparator(DataPreparator):
         pths_as_parquet = {
                 self.variable_ref_path: (False, ';'),
                 self.admissions_path: (False, ','),
-                #self.imputedstage_path: (True, None),
-                #self.ts_path: (True, None),
-                #self.med_path: (True, None),
+                self.imputedstage_path: (True, None),
+                self.ts_path: (True, None),
+                self.med_path: (True, None),
                 }
         
         for i, (src_pth, (src_is_multiple_parquet, sep)) in enumerate(pths_as_parquet.items()):
@@ -109,12 +107,15 @@ class hiridPreparator(DataPreparator):
         timeseries = pl.scan_parquet(self.imputedstage_parquet_path)
 
         los = (timeseries
-             .select('patientid', 'reldatetime')
-             .drop_nulls()
-             .rename({'patientid': 'admissionid',
-                      'reldatetime': 'lengthofstay'})
-             .group_by('admissionid')
-             .max())
+               .select('patientid', 'reldatetime')
+               .drop_nulls()
+               .rename({'patientid': 'admissionid',
+                        'reldatetime': 'lengthofstay'})
+               .group_by('admissionid')
+               .max()
+               .with_columns(
+                   pl.duration(seconds=pl.col('lengthofstay')).alias('lengthofstay')
+                   ))
                 
         return los
         
@@ -131,7 +132,7 @@ class hiridPreparator(DataPreparator):
                .rename({'patientid': 'admissionid'})
                .with_columns(
                    admissiontime=pl.col('admissiontime').str.to_datetime(),
-                   admissionid=pl.col('admissionid').cast(pl.Int32())
+                   admissionid=pl.col('admissionid').cast(pl.Int32)
                    )
                )
         return adm, adm.collect().to_pandas()
@@ -213,47 +214,6 @@ class hiridPreparator(DataPreparator):
         print('  -> Done')
         return heights, weights
 
-    def _build_patient_chunk(self,
-                             start,
-                             chunk_loader=None,
-                             rename_dic={},
-                             valuedate_label='valuedate',
-                             itemid_label='itemid',
-                             value_label='value',
-                             id_mapping=None):
-        '''
-        In the timeseries files, the admissionids are not ordered.
-        To create patient chunks, we have to go through the whole file and
-        select a list of patient ids.
-        '''
-        numcols = [itemid_label, 'patientid']
-        if self.labels is None:
-            raise ValueError('Please run labels first.')
-
-        chunk_tables = []
-        patient_chunk = self.stays[start:start+self.n_patient_chunk]
-
-        for k, table in enumerate(chunk_loader()):
-            table = table.rename(columns=rename_dic)
-
-            table[numcols] = table[numcols].apply(pd.to_numeric, errors='coerce')
-
-            table = (table.dropna(subset=numcols)
-                     .astype({itemid_label: int,
-                              'patientid': int}))
-
-            table = table.loc[table.patientid.isin(patient_chunk)]
-
-            chunk_tables.append(table)
-
-        df_chunk = pd.concat(chunk_tables)
-        df_chunk['admissionid'] = df_chunk['patientid']
-        df_chunk['variable'] = df_chunk[itemid_label].map(id_mapping)
-
-        df_chunk[value_label] = pd.to_numeric(df_chunk[value_label],
-                                              errors='coerce')
-        return df_chunk
-
     def gen_labels(self):
         """
         The admission table does not contain the heights and weights. 
@@ -298,40 +258,40 @@ class hiridPreparator(DataPreparator):
         self.save(lf, self.ts_savepth)
         return lf
     
+    
     def gen_medication(self):
-        """
-        Because patients are not ordered in the 
-        raw files. the _build_patient_chunk goes through the whole table to
-        extract data from a chunk of patients.
-        TODO : to polars !
-        """
+        self.get_labels(lazy=True)
         
-        #col_dosage=givendose
-        #col_unit=doseunit
-        #col_route=route
-        self.reset_chunk_idx()
-        self.get_labels()
-        self.mp = MedicationProcessor('hirid',
-                                      self.labels,
-                                      col_pid='admissionid',
-                                      col_med='variable',
-                                      col_time='offset',
-                                      col_los='lengthofstay',
-                                      unit_los='second',
-                                      offset_calc=True,
-                                      col_admittime='admissiontime')
+        labels = self.labels.select('admissionid',
+                                    'lengthofstay',
+                                    'admissiontime')
+        pharma = (pl.scan_parquet(self.med_parquet_path)
+                  .select('patientid',
+                          'pharmaid',
+                          'givenat',
+                          'givendose',
+                          'doseunit',
+                          'route')
+                  .with_columns(
+                      pl.col('pharmaid').replace(self.id_mapping['pharma']).alias('pharmaitem')
+                      )
+                  .drop('pharmaid')
+                  .rename({'patientid': 'admissionid'}))
+        
+        self.nmp = NewMedicationProcessor('hirid',
+                                          lf_med=pharma,
+                                          lf_labels=labels,
+                                          col_pid='admissionid',
+                                          col_med='pharmaitem',
+                                          col_start='givenat',
+                                          col_end=None,
+                                          col_los='lengthofstay',
+                                          col_dose='givendose',
+                                          col_dose_unit='doseunit',
+                                          col_route='route',
+                                          offset_calc=True,
+                                          col_admittime='admissiontime'
+                                        )
 
-        for start in range(0, len(self.stays), self.n_patient_chunk):
-
-            chunk = self._build_patient_chunk(
-                                    start,
-                                    chunk_loader=self._load_pharma_chunks,
-                                    rename_dic={'givenat': 'offset'},
-                                    itemid_label='pharmaid',
-                                    value_label='givendose',
-                                    id_mapping=self.id_mapping['pharma'])
-
-            chunk = (chunk.drop(columns=['givendose', 'pharmaid'])
-                          .pipe(self.mp.run))
-
-            self.save_chunk(chunk, self.pharma_savepth)
+        self.med = self.nmp.run()
+        self.save(self.med, self.med_savepath)

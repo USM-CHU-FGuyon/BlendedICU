@@ -5,6 +5,7 @@ import polars as pl
 
 from database_processing.datapreparator import DataPreparator
 from database_processing.medicationprocessor import MedicationProcessor
+from database_processing.newmedicationprocessor import NewMedicationProcessor
 
 
 class eicuPreparator(DataPreparator):
@@ -120,64 +121,17 @@ class eicuPreparator(DataPreparator):
                            'unitdischargestatus',
                            'unitdischargeoffset',
                            'hospitalid',
-                           'unittype')
+                           'unittype',
+                           'admissionweight',)
                    .filter(~pl.all_horizontal(pl.col('unitdischargestatus').is_null()))
-                   .sort('patientunitstayid')
-                   .collect())
+                   .with_columns(
+                       pl.duration(seconds=pl.col('unitdischargeoffset').mul(60)).alias('unitdischargeoffset')
+                       )
+                   .sort('patientunitstayid'))
 
         self.save(patient, self.labels_savepath)
         self.labels = patient
 
-    def gen_medication(self):
-        """
-        Medication can be found in three separate tables. 
-        """
-        print('o Medication')
-        self.get_labels(lazy=True)
-        
-        admissiondrug = (pl.scan_parquet(self.admissiondrug_parquet_pth)
-                         .select('patientunitstayid',
-                                 'drugoffset',
-                                 'drugname'))
-        #drugdosage, drugunit
-        
-        
-        infusiondrug = (pl.scan_parquet(self.infusiondrug_parquet_pth)
-                        .select('patientunitstayid',
-                                'infusionoffset',
-                                'drugname')
-                        .rename({"infusionoffset": "drugoffset"}))
-
-        # colonne drugunit facile a creer.
-
-
-        medication = (pl.scan_parquet(self.medication_parquet_pth)
-                      .select('patientunitstayid',
-                              'drugstartoffset',
-                              'drugname')
-                      .rename({'drugstartoffset': 'drugoffset'}))
-        
-        #routeadmin, dosage
-        
-        medication_in = (pl.concat([infusiondrug,
-                                   medication,
-                                   admissiondrug])
-                         .collect()
-                         .to_pandas())
-
-
-
-        self.mp = MedicationProcessor(self.dataset,
-                                      self.labels.collect().to_pandas(),
-                                      col_med='drugname',
-                                      col_time='drugoffset',
-                                      col_pid='patientunitstayid',
-                                      col_los='unitdischargeoffset',
-                                      unit_offset='minute',
-                                      unit_los='minute')
-
-        self.med = self.mp.run(medication_in)
-        return self.save(self.med, self.med_savepath)
 
     def gen_flat(self):
         print('o Flat features')
@@ -196,6 +150,133 @@ class eicuPreparator(DataPreparator):
                 .sort('patientunitstayid'))
 
         return self.save(flat, self.flat_savepath)
+
+
+    def _lf_admissiondrug(self):
+        '''
+        This table has clean dosage/units and does not need much processing.
+        '''
+        lf_admissiondrug = (pl.scan_parquet(self.admissiondrug_parquet_pth)
+                         .select(self.col_stayid,
+                                 'drugoffset',
+                                 'drugname',
+                                 'drugdosage',
+                                 'drugunit')
+                         .with_columns(
+                             pl.col('drugunit').replace(' ', None)
+                             )
+                         .rename({"drugoffset": "drugstartoffset"}))
+        return lf_admissiondrug
+
+    def _lf_medication(self):
+        '''drugunit is written in "dosage" column eg "12 mg"
+        sometimes the dosage value may be two numbers separated by a space
+        eg. "125 12", in that case we keep dose=125 unit=null'''
+        lf_medication = (pl.scan_parquet(self.medication_parquet_pth)
+                      .select(self.col_stayid,
+                              'drugstartoffset',
+                              'drugstopoffset',
+                              'drugname',
+                              'dosage',
+                              'routeadmin')
+                      .with_columns(
+                          pl.col('dosage').str.split_exact(" ", 1).struct.rename_fields(["drugdosage", "drugunit"]).alias("fields")
+                          )
+                      .unnest("fields")
+                      .with_columns(
+                          pl.when(~pl.col('drugunit').str.to_integer(strict=False).is_null())
+                          .then(None)
+                          .otherwise(pl.col('drugunit'))
+                          .alias('drugunit'),
+                          
+                          pl.col('drugdosage').str.replace_all(',', '')
+                          .cast(pl.Float64, strict=False)
+                      )
+                      .rename({'dosage': 'original_drugdosage'}))
+        return lf_medication
+
+    def _lf_infusiondrug(self):
+        '''
+        Most drugnames are written as "Milrinone (mcg/kg/min)".
+        we extracted the unit in parenthesis.
+        and multiplied by patient weight when /kg was found in the dosage.
+        we used patient weight if specified in the infusion table else 
+        admissionweight.
+        # TODO  ET SI AUCUN DES DEUX ??
+        
+        we look for a list of units that represent most of the data.
+        '''
+        
+        lookup_units = [
+            'ml/hr', 'mcg/kg/min', 'units/hr', 'mg/hr', 'mcg/min', 'mcg/hr',
+            'mcg/kg/hr', 'mg/min', 'units/min', 'ml', 'units/kg/hr',
+            'mg/kg/min', 'mg/kg/hr', 'mcg/kg/hr', 'nanograms/kg/min'
+                 ]
+        
+        lf_infusiondrug = (pl.scan_parquet(self.infusiondrug_parquet_pth)
+                        .select(self.col_stayid,
+                                'infusionoffset',
+                                'drugname',
+                                'drugamount',
+                                #'drugrate',
+                                #'patientweight'
+                                )
+                        .with_columns(
+                            pl.col('drugname').str.split_exact("(", 1).struct.rename_fields(["name", "drugunit"]).alias("fields")
+                            )
+                        .unnest("fields")
+                        .drop('name')
+                        .with_columns(
+                            pl.col('drugunit').str.replace_all(r'\)', '').str.strip_chars()
+                            )
+                        .with_columns(
+                            pl.when(pl.col('drugunit').is_in(lookup_units))
+                            .then(pl.col('drugunit'))
+                            .otherwise(None)
+                            )
+                            
+                        .rename({"infusionoffset": "drugstartoffset",
+                                 'drugamount': 'drugdosage'
+                                 }
+                                )
+                        )
+        return lf_infusiondrug
+
+    def _get_medication_table(self):
+
+        lf_admissiondrug = self._lf_admissiondrug()
+        lf_medication = self._lf_medication()
+        lf_infusiondrug = self._lf_infusiondrug()
+        
+        lf_med = pl.concat([lf_infusiondrug,
+                            lf_medication,
+                            lf_admissiondrug],
+                           how='diagonal')
+                         
+        return lf_med
+
+    def gen_medication(self):
+        print('o Medication')
+        self.get_labels(lazy=True)
+        labels = self.labels.select(self.col_stayid, self.col_los)
+        lf_med = self._get_medication_table()
+
+        self.nmp = NewMedicationProcessor(self.dataset,
+                                          lf_med=lf_med,
+                                          lf_labels=labels,
+                                          col_pid=self.col_stayid,
+                                          col_med='drugname',
+                                          col_start='drugstartoffset',
+                                          col_end='drugstopoffset',
+                                          col_los=self.col_los,
+                                          col_dose='drugdosage',
+                                          col_dose_unit='drugunit',
+                                          col_route='routeadmin',
+                                          unit_offset='minute',
+                                        )
+        self.med = self.nmp.run()
+        self.save(self.med, self.med_savepath)
+
 
     def gen_diagnoses(self):
         """

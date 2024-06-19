@@ -2,9 +2,8 @@ from pathlib import Path
 
 import polars as pl
 
-from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.datapreparator import DataPreparator
-
+from database_processing.newmedicationprocessor import NewMedicationProcessor
 
 class AmsterdamPreparator(DataPreparator):
     def __init__(self,
@@ -57,36 +56,43 @@ class AmsterdamPreparator(DataPreparator):
     def gen_labels(self):
         print('Labels...')
         admissions = (pl.scan_parquet(self.admission_parquet_pth)
-                      .with_columns(care_site=pl.lit('Amsterdam University medical center'))
-                      .collect())
+                      .with_columns(
+                          pl.lit('Amsterdam University medical center').alias('care_site'),
+                          pl.duration(seconds=pl.col(self.col_los).mul(self.seconds_in_an_hour)).alias(self.col_los)
+                          )
+                      )
         
         return self.save(admissions, self.labels_savepath)
 
     def gen_medication(self):
         print('Medications...')
-        self.reset_chunk_idx()
-        self.get_labels()
+        self.get_labels(lazy=True)
         
-        #col_dose=dose
-        #col_doseunit=doseunit
-        #col_start='start
-        #col_end=end
+        labels = self.labels.select('admissionid', 'lengthofstay')
+        
         drugitems = (pl.scan_parquet(self.drugitems_parquet_pth)
-                     .select('admissionid', 'item', 'start')
-                     .collect()
-                     .to_pandas())
-
-        self.mp = MedicationProcessor('amsterdam',
-                                      self.labels,
-                                      col_pid='admissionid',
-                                      col_med='item',
-                                      col_time='start',
-                                      col_los='lengthofstay',
-                                      unit_offset='milisecond',
-                                      unit_los='hour')
-
-        self.med = self.mp.run(drugitems)
-        return self.save(self.med, self.med_savepath)
+                     .select('admissionid',
+                             'item',
+                             'start',
+                             'stop',
+                             'dose',
+                             'doseunit'))
+        
+        self.nmp = NewMedicationProcessor('amsterdam',
+                                          lf_med=drugitems,
+                                          lf_labels=labels,
+                                          col_pid='admissionid',
+                                          col_med='item',
+                                          col_start='start',
+                                          col_end='stop',
+                                          col_los='lengthofstay',
+                                          col_dose='dose',
+                                          col_dose_unit='doseunit',
+                                          col_route=None,
+                                          unit_offset='milisecond',
+                                        )
+        med = self.nmp.run()
+        return self.save(med, self.med_savepath)
 
     def gen_listitems_timeseries(self):
         print('Listitems ts...')

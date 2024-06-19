@@ -16,6 +16,8 @@ class DataPreparator(DataProcessor):
         self.chunksize = 10_000_000  # chunksize in csv reader
         self.inch_to_cm = 2.54
         self.lbs_to_kg = 0.454
+        self.seconds_in_a_day = 24*60*60
+        self.seconds_in_an_hour = 60*60
 
     @staticmethod
     def _get_name_as_parquet(pth):

@@ -23,7 +23,6 @@ class NewMedicationProcessor(DataProcessor):
                  col_med,
                  col_start,
                  col_los,
-                 unit_los,
                  col_dose,
                  col_dose_unit,
                  col_route,
@@ -47,12 +46,30 @@ class NewMedicationProcessor(DataProcessor):
         self.col_los = col_los
         self.col_admittime = col_admittime
         self.offset_calc = offset_calc
-        self.unit_los = unit_los
         self.unit_offset = unit_offset
         self.col_dose = col_dose
         self.col_dose_unit = col_dose_unit
         self.col_route = col_route
         self.col_end = col_end
+        
+        self.schema = {
+            'start': pl.Datetime,
+            'end': pl.Datetime,
+            'dose': pl.Float32,
+            'dose_unit': pl.String,
+            'route': pl.String
+            }
+        
+        col_mapping = {
+                        self.col_start: 'start',
+                        self.col_end : 'end',
+                        self.col_dose: 'dose',
+                        self.col_dose_unit : 'dose_unit',
+                        self.col_route : 'route'
+                        }
+        self.cols_to_create = [v for k, v in col_mapping.items() if k is None]
+        self.rename_dic = {k: v for k, v in col_mapping.items() if k is not None}
+        
         self.unit_list = ['grams', 'mg', 'mcg']
         self.gram_dict = {
             'grams' : 
@@ -87,16 +104,16 @@ class NewMedicationProcessor(DataProcessor):
 
     def _convert_offset(self, lf):
         convertdict = {
-                'miliseconds': 1e-3,
-                'seconds': 1,
-                'minutes':60,
+                'milisecond': 1e-3,
+                'second': 1,
+                'minute':60,
                 'hour': 24*60,
                 'day': 24*60*60
             }
         
         lf = lf.with_columns(
-            pl.duration(seconds=pl.col('start').mul(convertdict[self.unit_offset])),
-            pl.duration(seconds=pl.col('end').mul(convertdict[self.unit_offset])),
+            pl.duration(seconds=pl.col('start').mul(convertdict[self.unit_offset])).alias('start'),
+            pl.duration(seconds=pl.col('end').mul(convertdict[self.unit_offset])).alias('end'),
             )
         return lf
     
@@ -164,18 +181,13 @@ class NewMedicationProcessor(DataProcessor):
               )
         return lf
 
-
-    def _rename(self, lf):
-        """
-        Rename the columns with more conventional names
-        """
-        lf = lf.rename({self.col_start: 'start',
-                        self.col_end : 'end',
-                        self.col_dose: 'dose',
-                        self.col_dose_unit : 'dose_unit',
-                        self.col_route : 'route'
-                        })
+    def _add_missing_cols(self, lf):
+        lf = lf.with_columns(
+                (pl.lit(None).cast(self.schema[col]).alias(col) for col in self.cols_to_create)
+            )
+        
         return lf
+
 
     def _main_unit(self, lf):
         """
@@ -229,16 +241,16 @@ class NewMedicationProcessor(DataProcessor):
 
         return lf
             
-
-
     def run(self):
         med = (self.lf_med
+               .pipe(self._add_missing_cols)
                .join(self.lf_labels, on=self.col_pid)
-               .pipe(self._rename)
+               .rename(self.rename_dic)
                .pipe(self._get_offset)
                .pipe(self._filter_times)
                .pipe(self._map_ingredients)
-               #.pipe(self._main_unit) #TODO : non functional yet !
                )
+               #.pipe(self._main_unit))
         return med
+
         

@@ -1,9 +1,7 @@
 from pathlib import Path
 
-import pandas as pd
 import polars as pl
 
-from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.newmedicationprocessor import NewMedicationProcessor
 from database_processing.datapreparator import DataPreparator
 
@@ -49,9 +47,7 @@ class mimic3Preparator(DataPreparator):
         self.flat_savepath = self.savepath + 'flat.parquet'
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
-        self.seconds_in_a_day = 24*60*60
         self.col_los = 'LOS'
-        self.unit_los = 'day'
         
     def gen_icustays(self):
         admissions = pl.scan_parquet(self.admissions_parquet_pth)
@@ -278,7 +274,7 @@ class mimic3Preparator(DataPreparator):
         icustays = (self.icustays.lazy()
                     .select('ICUSTAY_ID', 'INTIME', 'LOS'))
         
-        self.nmp = NewMedicationProcessor('mimic3',
+        self.nmp = NewMedicationProcessor(self.dataset,
                                           lf_med=inputevents,
                                           lf_labels=icustays,
                                           col_pid='ICUSTAY_ID',

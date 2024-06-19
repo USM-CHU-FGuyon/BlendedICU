@@ -65,24 +65,24 @@ class mimic3TSP(TimeseriesProcessor):
         self.stays = self._get_stays()
         self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
         
-        self.lf_medication = self.harmonize_columns(self.lf_medication,
+        lf_medication = self.harmonize_columns(self.lf_medication,
                                                     **self.colnames_med)
-        self.timeseries = self.harmonize_columns(self.lf_timeseries,
+        timeseries = self.harmonize_columns(self.lf_timeseries,
                                                  **self.colnames_ts)
-        self.timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
+        timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
                                                      **self.colnames_lab)
-        self.outputevents = self.harmonize_columns(self.lf_outputevents,
+        outputevents = self.harmonize_columns(self.lf_outputevents,
                                                    **self.colnames_outputevents)
         
-        self.lf_timeser = pl.concat([self.timeseries,
-                                     self.timeseries_lab,
-                                     self.outputevents],
-                                    how='diagonal')
+        lf_timeser = pl.concat([timeseries,
+                                timeseries_lab,
+                                outputevents],
+                                how='diagonal')
         
-        lf_med = self.filter_tables(self.lf_medication,
+        lf_med = self.filter_tables(lf_medication,
                                     kept_variables=self.kept_med)
         
-        lf_ts = self.filter_tables(self.lf_timeser,
+        lf_ts = self.filter_tables(lf_timeser,
                                    kept_variables=self.kept_ts)
         
         lf_formatted_ts = self.pl_format_timeseries(lf_ts)
@@ -103,5 +103,5 @@ class mimic3TSP(TimeseriesProcessor):
                              .collect())
 
             self.newprocess_tables(self.df_ts_chunked,
-                                med=self.df_med_chunked,
-                                chunk_number=chunk_number)
+                                   med=self.df_med_chunked,
+                                   chunk_number=chunk_number)
