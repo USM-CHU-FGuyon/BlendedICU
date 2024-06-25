@@ -16,8 +16,9 @@ class blendedicuTSP(TimeseriesProcessor):
         partially_processed_timeseries will be read and concatenated.
         '''
         super().__init__(dataset='blended')
-        self.ts_pths = self.get_ts_pths(self.partiallyprocessed_ts_dir,
-                                         compute_index)
+        self.partiallyprocessed_ts_dir
+        #self.ts_pths = self.get_ts_pths(self.partiallyprocessed_ts_dir,
+        #                                 compute_index)
 
     
     def get_ts_pths(self, ts_dir, compute_index=False, sample=None):

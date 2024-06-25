@@ -78,6 +78,13 @@ class AmsterdamPreparator(DataPreparator):
                              'dose',
                              'doseunit'))
         
+        dose_unit_conversions = {
+            'g': {"omop_code": "mg",
+                      "mul": 1e3},
+            'µg': {'omop_code': 'mg',
+                    'mul': 0.001},
+            }
+        
         self.nmp = NewMedicationProcessor('amsterdam',
                                           lf_med=drugitems,
                                           lf_labels=labels,
@@ -90,6 +97,7 @@ class AmsterdamPreparator(DataPreparator):
                                           col_dose_unit='doseunit',
                                           col_route=None,
                                           unit_offset='milisecond',
+                                          dose_unit_conversion_dic=dose_unit_conversions
                                         )
         med = self.nmp.run()
         return self.save(med, self.med_savepath)

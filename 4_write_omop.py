@@ -11,9 +11,9 @@ specifications.
 """
 from blended_preprocessing.omop_conversion import OMOP_converter
 
-self = OMOP_converter(initialize_tables=True,
-                      recompute_index=False)
+self = OMOP_converter(initialize_tables=True)
 
-self.measurement_table(start_chunk=0)
+self.observation_period_table()
+self.measurement_table()
+self.drug_exposure_table()
 
-self.drug_exposure_table(start_chunk=0)

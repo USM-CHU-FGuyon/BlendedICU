@@ -2,7 +2,6 @@ import operator
 from functools import reduce
 
 import polars as pl
-import numpy as np
 
 from database_processing.dataprocessor import DataProcessor
 
@@ -13,6 +12,7 @@ class NewMedicationProcessor(DataProcessor):
     omop ingredients using the drug mapping (auxillary_files/medications.json).
     The outputs a dataframe that is saved as medication.parquet file or as 
     several parquet chunks when filesize is inconvenient.
+    
     
     """
     def __init__(self,
@@ -27,6 +27,7 @@ class NewMedicationProcessor(DataProcessor):
                  col_dose_unit,
                  col_route,
                  col_end,
+                 dose_unit_conversion_dic=None,
                  unit_offset=None,
                  offset_calc=False,
                  col_admittime=None):
@@ -51,7 +52,8 @@ class NewMedicationProcessor(DataProcessor):
         self.col_dose_unit = col_dose_unit
         self.col_route = col_route
         self.col_end = col_end
-        
+        self.dose_unit_conversion_dic =dose_unit_conversion_dic
+        self.dose_unit_expressions, self.dose_unit_replacements = self._dose_unit_expressions()
         self.schema = {
             'start': pl.Datetime,
             'end': pl.Datetime,
@@ -70,17 +72,24 @@ class NewMedicationProcessor(DataProcessor):
         self.cols_to_create = [v for k, v in col_mapping.items() if k is None]
         self.rename_dic = {k: v for k, v in col_mapping.items() if k is not None}
         
-        self.unit_list = ['grams', 'mg', 'mcg']
-        self.gram_dict = {
-            'grams' : 
-                {'grams' : 1, 'mg' : 1e-3, 'mcg' : 1e-6}
-                ,
-            'mg' : 
-                {'grams' : 1e3, 'mg' : 1, 'mcg' : 1e-3}
-                ,
-            'mcg' : 
-                {'grams' : 1e6, 'mg' : 1e3, 'mcg' : 1}
-            }
+    
+    def _dose_unit_expressions(self):
+        exprs = []
+        if self.dose_unit_conversion_dic is None:
+            return exprs
+        
+        unit_replacements = {old_label: v['omop_code'] for old_label, v in self.dose_unit_conversion_dic.items()}
+        
+        for source_unit, dic in self.dose_unit_conversion_dic.items():
+            expr = [
+                    (pl.when(pl.col('dose_unit').eq(source_unit))
+                    .then(pl.col('dose').mul(dic['mul']))
+                    .otherwise(pl.col('dose'))),
+                    ]
+            
+            exprs.append(expr)
+        
+        return exprs, unit_replacements
         
     
     def _compute_offset(self, lf):
@@ -91,8 +100,7 @@ class NewMedicationProcessor(DataProcessor):
         
         """
         
-        lf = (lf
-              
+        lf = (lf 
               .with_columns(
                   (pl.col('start') - pl.col(self.col_admittime)).alias('start'),
                   (pl.col('end') - pl.col(self.col_admittime)).alias('end')
@@ -188,59 +196,21 @@ class NewMedicationProcessor(DataProcessor):
         
         return lf
 
-
-    def _main_unit(self, lf):
-        """
-        This function iterates through the labels 
-        and say if needed,what is the main unit to use for conversion.
-        It returns None if no conversion is needed.
-        """
+    def _unit_conversion(self, lf):
         
-        # replace the 'gm' unit name by 'grams'
-        lf = lf.with_columns(
-            pl.col('dose_unit').str.replace(r'gm', 'grams')
-            )
+        for expr in self.dose_unit_expressions:
+            lf = lf.with_columns(expr)
+        lf = lf.with_columns(pl.col('dose_unit').replace(self.dose_unit_replacements))
         
-        # Create a dictionnary {label : main unit used among grams, mg and mcg}
-        label_df = (lf.select('label', 'dose_unit').collect(streaming = True).to_pandas())
-        #self.l = label_df
-        #1/0
-        
-        label_pivot = (label_df.pivot_table(index='label',
-                                            columns='dose_unit',
-                                            aggfunc='size',
-                                            fill_value=0)
-                       [['grams', 'mg', 'mcg']])
-        main_unit_series = label_pivot.apply(lambda row: label_pivot.columns[np.argmax(row)], axis=1)
-        main_unit_dict = main_unit_series.to_dict()
-        
-        # generate 3 temporary columns used to modify the units converted
-        lf = lf.with_columns([
-            pl.lit(unit).alias(unit) for unit in self.unit_list]
-            )
-        
-        # convert the values into the main unit by iterating through labels and units 
-        for label, main_unit in main_unit_dict.items():
-            for source_unit in self.unit_list :
-                lf = lf.with_columns(
-                    pl.when(
-                        (pl.col('label') == label)
-                        & (pl.col('dose_unit') == source_unit)
-                        )
-                    .then(pl.col('dose').mul(self.gram_dict[main_unit][source_unit]))
-                    .otherwise(pl.col('dose'))
-                    )
-        # change the dose_unit colmun to match the modification made on the dose column
-                lf = lf.with_columns(
-                    pl.when((pl.col('label') == label) & (pl.col('dose_unit') == source_unit))
-                    .then(pl.col(main_unit))
-                    .otherwise(pl.col('dose_unit')).alias('dose_unit')
-                    )
-        # get rid of the 3 temporary columns
-        lf = lf.drop(self.unit_list)
-
         return lf
             
+    def _map_routes(self, lf):
+
+        lf = lf.with_columns(
+            pl.col('route').replace(self.mapping_drug_route, default=None).cast(pl.Int32).alias('route_concept_id')
+            )
+        return lf
+    
     def run(self):
         med = (self.lf_med
                .pipe(self._add_missing_cols)
@@ -249,8 +219,10 @@ class NewMedicationProcessor(DataProcessor):
                .pipe(self._get_offset)
                .pipe(self._filter_times)
                .pipe(self._map_ingredients)
+               .pipe(self._map_routes)
+               .pipe(self._unit_conversion)
                )
-               #.pipe(self._main_unit))
+
         return med
 
         

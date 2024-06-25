@@ -57,7 +57,6 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                     'sex',
                     'raw_height',
                     'raw_weight',
-                    'true_lengthofstay',
                     'lengthofstay',
                     'mortality'
                     ]
@@ -108,7 +107,6 @@ class blended_FLProcessor(FlatAndLabelsProcessor):
                                                  'source_dataset': str,
                                                  'original_uniquepid': str,
                                                  'mortality': int,
-                                                 'lengthofstay': float,
                                                  'origin': str,
                                                  'care_site': str})
                                         .droplevel('source_dataset'))

@@ -69,15 +69,18 @@ class TimeseriesProcessor(DataProcessor):
         self.cols_minmax = self._get_cols_minmax()
         self.pyarrow_schema_dict = self._pyarrow_schema_dict()
         self.column_template = self._column_template()
+        self.pth_long_timeseries = self.dir_long_timeseries + self.dataset + '.parquet'
+        self.pth_long_medication = self.dir_long_medication + self.dataset + '.parquet'
         
-        self.pl_harmonizer = {
-            'amsterdam': self._pl_harmonize_amsterdam,
-            'eicu': self._pl_harmonize_eicu,
-            'hirid': self._pl_harmonize_hirid,
-            'mimic4': self._pl_harmonize_mimic4,
-            'mimic3': self._pl_harmonize_mimic3,
+        self.expr_dict = {
+            'amsterdam': self._harm_expressions_amsterdam(),
+            'mimic3': self._harm_expressions_mimic3(),
+            'mimic4': self._harm_expressions_mimic4(),
+            'eicu': self._harm_expressions_eicu(),
+            'hirid': self._harm_expressions_hirid(),
             'blended': (lambda x: x)
             }[self.dataset]
+
 
     def _get_cols_minmax(self):
         df = self.cols.dropna(subset=self.dataset).set_index(self.dataset)
@@ -154,7 +157,7 @@ class TimeseriesProcessor(DataProcessor):
                               col_var=None,
                               col_value=None):
         
-        mapping = {k: v for k, v in {col_id: self.idx_col_int,
+        mapping = {k: v for k, v in {col_id: self.idx_col,
                                      col_var: self.col_variable,
                                      col_time: self.time_col,
                                      col_value: self.col_value}.items()
@@ -165,7 +168,7 @@ class TimeseriesProcessor(DataProcessor):
 
     def add_prefixed_pid(self, lf):
         lf = lf.with_columns(
-            (self.dataset+'-'+pl.col(self.idx_col_int).cast(pl.String)).alias(self.idx_col)
+            (self.dataset+'-'+pl.col(self.idx_col).cast(pl.String)).alias(self.idx_col)
             )
         return lf
             
@@ -198,53 +201,15 @@ class TimeseriesProcessor(DataProcessor):
 
         return table
 
-    @staticmethod
-    def _set_patient_time_index(ts, cols_index):
-        """
-        'time' colum is a number of seconds. This function rounds the 'time'
-        column to an int buts keeps a float dtype. This avoids unnecessary
-        precision on certain measurements (especially for HiRID).
-        Then sets patient and time columns as index.
-        """
-        ts['time'] = ts['time'].round()
-        ts = ts.set_index(cols_index)
-        return ts
         
-    def _pl_get_variables_from_long_format(self, lf_tsver):
-        ver_variables = (lf_tsver
+    def _pl_get_variables_from_long_format(self, lf_tslong):
+        ver_variables = (lf_tslong
                          .select(pl.col('variable').unique())
                          .filter(pl.col('variable').is_in(self.cols[self.dataset]))
                          .collect().to_numpy().flatten()
                          .tolist())
         return ver_variables
-    
-    def _get_variables_from_long_format(self, ts_ver):
-        """
-        Returns the list of variables that are found in ts_ver AND in 
-        the included timeseries variables listed in self.cols.
-        """
-        ver_variables = (ts_ver['variable']
-                         .drop_duplicates()
-                         .reset_index(drop=True))
-        ver_variables = ver_variables.loc[ver_variables.isin(self.cols[self.dataset])]
-        return ver_variables
-    
-    @staticmethod
-    def _get_unique_patients(ts_ver, ts_hor, med):
-        """
-        Returns all patients that are found in either long format or wide
-        format timeseries or medication data.
-        """
-        ver_patients = ts_ver.index.get_level_values(0)
-        hor_patients = ts_hor.index.get_level_values(0)
-        med_patients = med.patient
 
-        unique_patients = (ver_patients.union(hor_patients)
-                                       .union(med_patients)
-                                       .drop_duplicates()
-                                       .sort_values())
-        return unique_patients
-    
     
     def pl_format_meds(self, med):
         med = (med
@@ -254,32 +219,77 @@ class TimeseriesProcessor(DataProcessor):
         self.save(med, med_savepath)
         return med
     
+    
+    def timeseries_to_long(self,
+                           lf_long=None,
+                           lf_wide=None,
+                           sink=True):
+        cols_index = {self.idx_col: pl.Int64, self.time_col: pl.Int64}
+        if lf_wide is None:
+            lf_wide = pl.LazyFrame(schema=cols_index|{'dummy': pl.Float32})
+        if lf_long is None:
+            lf_long = pl.LazyFrame(schema=cols_index | {'variable':pl.String, 'value': pl.Float32})
+
+        lf_wide_melted = lf_wide.melt(['patient', 'time']).with_columns(pl.col('value').cast(pl.Float32, strict=False))
+        
+        lf = (pl.concat([df.select(sorted(df.columns)) for df in [lf_wide_melted, lf_long]], how='vertical_relaxed')
+              .with_columns(
+                  pl.col('variable').replace(self.col_mapping)
+                  )
+             .pipe(self._harmonize_long)
+             .pipe(self.add_prefixed_pid)
+             .unique()
+              )
+        if not sink:# avoids a weird error on Hirid data.
+            print('Collecting...')
+            lf = lf.collect(streaming=True)
+        self.save(lf, self.pth_long_timeseries)
+        
+    def medication_to_long(self, lf_long_med):
+        lf_long_med = (lf_long_med
+                       .pipe(self.add_prefixed_pid)
+                       .select('patient',
+                               'start',
+                               'dose',
+                               'dose_unit',
+                               'route',
+                               'end',
+                               'original_drugname',
+                               'variable')
+                       .with_columns(
+                           pl.col('dose').cast(pl.Float32)
+                           )
+                       .unique()
+                       )
+        self.save(lf_long_med, self.pth_long_medication)
+        
+    
     def pl_format_timeseries(self,
-                             lf_tsver=None,
-                             lf_tshor=None,
+                             lf_tslong=None,
+                             lf_tswide=None,
                              chunk_number=None):
         
         '''There is a much better way to do what format_raw_data does.'''
         
         cols_index = {self.idx_col_int: int, self.time_col: int}
         pl_cols_index = [pl.col(self.idx_col_int), pl.col(self.time_col)]
-        if lf_tshor is None:
-            lf_tshor = pl.LazyFrame(schema=cols_index|{self.idx_col: str})
-        if lf_tsver is None:
-            lf_tsver = pl.LazyFrame(schema=cols_index | {'variable':str, 'value': str, self.idx_col: str})
+        if lf_tswide is None:
+            lf_tswide = pl.LazyFrame(schema=cols_index|{self.idx_col: str})
+        if lf_tslong is None:
+            lf_tslong = pl.LazyFrame(schema=cols_index | {'variable':str, 'value': str, self.idx_col: str})
 
-        lf_tsver_pivoted = self.pl_lazypivot(lf_tsver,
+        lf_tslong_pivoted = self.pl_lazypivot(lf_tslong,
                                              index=pl_cols_index,
                                              columns=pl.col('variable'),
                                              values=pl.col('value'),
                                              unique_column_names=self.kept_ts)
 
-        variables = set(lf_tsver_pivoted.columns).union(set(lf_tshor.columns)) - {self.idx_col, self.time_col}
+        variables = set(lf_tslong_pivoted.columns).union(set(lf_tswide.columns)) - {self.idx_col, self.time_col}
 
         colsminmax = {k: v for k, v in self.cols_minmax.items() if k in variables}
 
-        df_ts = (lf_tsver_pivoted
-                  .join(lf_tshor, on=pl_cols_index, how='outer_coalesce')
+        df_ts = (lf_tslong_pivoted
+                  .join(lf_tswide, on=pl_cols_index, how='outer_coalesce')
                   .with_columns(
                       [pl.col(variable).clip(lower_bound=colsminmax[variable]['user_min'],
                                              upper_bound=colsminmax[variable]['user_max'])
@@ -387,79 +397,82 @@ class TimeseriesProcessor(DataProcessor):
         return iterdir
 
 
-    def _pl_harmonize_hirid(self, lf):
-        lf = lf.with_columns(
-            pl.col('hemoglobin').mul(10)
-            )
-        return lf
-
-    def _pl_harmonize_amsterdam(self, lf):
+    def _harm_expressions_amsterdam(self):
         """
         Conversion constants were taken from:
         https://www.wiv-isp.be/qml/uniformisation-units/conversion-table/tableconvertion-chimie.pdf
         """
-        # The numericitems table indicates that all
-        # tidal volume settings are in mL.
-        # however there are inconsistent units in the data.
-        lf = lf.with_columns(
-            pl.col('O2_arterial_saturation').mul(100),
-            pl.col('hemoglobin').mul(1.613),
-            (pl.when(pl.col('tidal_volume_setting')<1)
-             .then(pl.col('tidal_volume_setting').mul(1000))
-             .otherwise(pl.col('tidal_volume_setting'))),
-            (pl.when((pl.col('tidal_volume_setting')>1) 
-                     | (pl.col('tidal_volume_setting')<3)  )
-             .then(pl.lit(None))
-             .otherwise(pl.col('tidal_volume_setting')))
-            )
-        return lf
+        expr_dict = {
+            'O2_arterial_saturation': pl.col('value').mul(100),
+            'hemoglobin': pl.col('value').mul(1.613),
+            'tidal_volume_setting': (pl.when(pl.col('value')<1)
+                                     .then(pl.col('value').mul(1000))
+                                     .otherwise(pl.col('value'))),
+            }
+        return expr_dict
 
+    def _harm_expressions_hirid(self):
+        expr_dict = {
+            
+            'hemoglobin': pl.col('value').mul(10)
+                     }
+        return expr_dict
 
-    def _pl_harmonize_eicu(self, lf):
-
-        lf = lf.with_columns(
-            pl.when(pl.col('temperature')>80)
-            .then((pl.col('temperature')-32).truediv(1.8))
-            .otherwise(pl.col('temperature'))
-            .alias('temperature'),
-            pl.col('calcium').mul(0.25),
-            pl.col('magnesium').mul(0.411),
-            pl.col('blood_glucose').mul(0.0555),
-            pl.col('creatinine').mul(88.40),
-            pl.col('bilirubine').mul(17.39),
-            pl.col('albumin').mul(10),
-            pl.col('blood_urea_nitrogen').mul(0.357),
-            pl.col('phosphate').mul(0.323)
-            )
-
-        return lf
-
-    def _pl_harmonize_mimic3(self, lf):
-        lf = lf.with_columns(
-            (pl.col('temperature')-32).truediv(1.8),
-            pl.col('blood_glucose').mul(0.0555),
-            pl.col('magnesium').mul(0.411),
-            pl.col('creatinine').mul(88.40),
-            pl.col('calcium').mul(0.25),
-            pl.col('bilirubine').mul(17.39),
-            pl.col('albumin').mul(10.),
-            pl.col('blood_urea_nitrogen').mul(0.357),
-            pl.col('phosphate').mul(0.323))  
-        return lf
-
-    def _pl_harmonize_mimic4(self, lf):
-        lf = lf.with_columns(
-            (pl.col('temperature')-32).truediv(1.8),
-            pl.col('blood_glucose').mul(0.0555),
-            pl.col('magnesium').mul(0.411),
-            pl.col('creatinine').mul(88.40),
-            pl.col('calcium').mul(0.25),
-            pl.col('bilirubine').mul(17.39),
-            pl.col('albumin').mul(10.),
-            pl.col('blood_urea_nitrogen').mul(0.357),
-            pl.col('phosphate').mul(0.323))        
+    def _harm_expressions_eicu(self):
         
+        expr_dict = {'temperature': pl.when(pl.col('value')>80)
+                     .then((pl.col('value')-32).truediv(1.8))
+                     .otherwise(pl.col('value'))
+                     .alias('value'),
+                     'calcium': pl.col('value').mul(0.25),
+                     'magnesium': pl.col('value').mul(0.411),
+                     'blood_glucose': pl.col('value').mul(0.0555),
+                     'creatinine': pl.col('value').mul(88.40),
+                     'bilirubine': pl.col('value').mul(17.39),
+                     'albumin': pl.col('value').mul(10),
+                     'blood_urea_nitrogen': pl.col('value').mul(0.357),
+                     'phosphate': pl.col('value').mul(0.323)}
+        return expr_dict
+
+    def _harm_expressions_mimic4(self):
+        
+        expr_dict = {'magnesium': pl.col('value').mul(0.411),
+                    'temperature': (pl.col('value')-32).truediv(1.8),
+                    'glucose': pl.col('value').mul(0.0555),
+                    'creatinine': pl.col('value').mul(88.40),
+                    'calcium': pl.col('value').mul(0.25),
+                    'bilirubine': pl.col('value').mul(17.39),
+                    'albumin': pl.col('value').mul(10.),
+                    'blood_urea_nitrogen': pl.col('value').mul(0.357),
+                    'phosphate': pl.col('value').mul(0.323),
+                    }
+        return expr_dict
+
+    def _harm_expressions_mimic3(self):
+        
+        expr_dict = {'magnesium': pl.col('value').mul(0.411),
+                    'temperature': (pl.col('value')-32).truediv(1.8),
+                    'glucose': pl.col('value').mul(0.0555),
+                    'creatinine': pl.col('value').mul(88.40),
+                    'calcium': pl.col('value').mul(0.25),
+                    'bilirubine': pl.col('value').mul(17.39),
+                    'albumin': pl.col('value').mul(10.),
+                    'blood_urea_nitrogen': pl.col('value').mul(0.357),
+                    'phosphate': pl.col('value').mul(0.323),
+                    }
+        return expr_dict
+    
+    def _harmonize_long(self, lf):
+        for key, expr in self.expr_dict.items():
+            lf = lf.with_columns(
+                pl.when(pl.col('variable')==key)
+                .then(expr)
+                .otherwise(pl.col('value')),
+                )
         return lf
+
+
+
 
     def _resampling(self, df):
         """
@@ -629,28 +642,6 @@ class TimeseriesProcessor(DataProcessor):
                                             len(patients),
                                             self.n_patient_chunk))
 
-    def _extract_variables(self, ts_ver, kept_variables, join_index=(0,1)):
-        """
-        ts_ver should have [patient, time] as multiindex
-                           [variable, value] as columns
-
-        The variables in kept_variables are queried in the variable column
-
-        A dataframe created from 'index' is filled with the values.
-        """
-        series = []
-        for var in kept_variables:
-            self.var = var
-            
-            df = (ts_ver.loc[ts_ver['variable']==var, 'value']
-                  .groupby(level=join_index)
-                  .agg(self.aggregates.loc[var])
-                  .rename(var))
-            series.append(df)
-        if series:
-            return pd.concat(series, axis=1)
-        else:
-            return pd.DataFrame(index=self.mux)
 
     def _add_hour(self, timeseries, admission_hours):
         '''

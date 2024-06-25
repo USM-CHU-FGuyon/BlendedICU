@@ -31,9 +31,6 @@ class Hir_FLProcessing(FlatAndLabelsProcessor):
 
         labels = (labels.pipe(self.medianfill,
                               cols=['height', 'weight'])
-                  .pipe(self.harmonize_los,
-                        label_los_col='lengthofstay',
-                        unit='second')
                   .rename(columns={'discharge_status': self.mor_col,
                                    'admissionid': self.idx_col})
                   .replace({'sex': {'M': 1, 'F': 0},

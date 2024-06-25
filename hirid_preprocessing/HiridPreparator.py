@@ -89,15 +89,6 @@ class hiridPreparator(DataPreparator):
                       ' untar Hirid source files\n')
         if notfound:
             raise ValueError('Some files are missing, see warnings above.')
-            
-            
-    def _load_pharma_chunks(self):
-        df_all_in_one_chunk = pd.read_parquet(self.med_parquet_path,
-                                              columns=['patientid',
-                                                       'pharmaid',
-                                                       'givenat',
-                                                       'givendose'])
-        return (df_all_in_one_chunk,)
     
     def _load_los(self):
         """
@@ -278,6 +269,14 @@ class hiridPreparator(DataPreparator):
                   .drop('pharmaid')
                   .rename({'patientid': 'admissionid'}))
         
+        dose_unit_conversions = {
+            'g': {"omop_code": "mg",
+                      "mul": 1e3},
+            'µg': {'omop_code': 'mg',
+                    'mul': 0.001},
+            }
+        
+        
         self.nmp = NewMedicationProcessor('hirid',
                                           lf_med=pharma,
                                           lf_labels=labels,
@@ -290,7 +289,8 @@ class hiridPreparator(DataPreparator):
                                           col_dose_unit='doseunit',
                                           col_route='route',
                                           offset_calc=True,
-                                          col_admittime='admissiontime'
+                                          col_admittime='admissiontime',
+                                          dose_unit_conversion_dic=dose_unit_conversions
                                         )
 
         self.med = self.nmp.run()

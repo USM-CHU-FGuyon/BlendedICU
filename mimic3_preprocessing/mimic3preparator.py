@@ -44,7 +44,6 @@ class mimic3Preparator(DataPreparator):
 
         self.outputevents_savepath = self.savepath + 'timeseriesoutputs.parquet'
         self.lab_savepath = self.savepath + 'timeserieslab.parquet'
-        self.flat_savepath = self.savepath + 'flat.parquet'
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
         self.col_los = 'LOS'
@@ -124,6 +123,8 @@ class mimic3Preparator(DataPreparator):
         They can be found under several itemids depending on the unit in 
         which they are measured. Every value is converted to the metric system.
         """
+        print('Fetching heights and weights in timeseries, this takes'
+              'minutes')
         icustays = self.icustays.lazy()
         itemids = {'weight_kg_2': 224639,
                    'weight_kg': 226512,
@@ -134,10 +135,10 @@ class mimic3Preparator(DataPreparator):
         keepids = [*itemids.values()]
 
         df = (pl.scan_parquet(self.chartevents_parquet_pth)
-                .select('ICUSTAY_ID', 'ITEMID', 'VALUENUM', 'CHARTTIME')
+                  .select('ICUSTAY_ID', 'ITEMID', 'VALUENUM', 'CHARTTIME')
                 .with_columns(
                     pl.col('CHARTTIME').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                    pl.col('ICUSTAY_ID').cast(pl.Int64, strict=False),
+                    pl.col('ICUSTAY_ID').cast(pl.Int32, strict=False),
                     )
                 .join(icustays.select('ICUSTAY_ID', 'INTIME'), on='ICUSTAY_ID')
                 .with_columns(
@@ -274,6 +275,32 @@ class mimic3Preparator(DataPreparator):
         icustays = (self.icustays.lazy()
                     .select('ICUSTAY_ID', 'INTIME', 'LOS'))
         
+        dose_unit_conversions = {
+            'gm': {"omop_code": "mg",
+                    "mul": 1e3},
+            'grams': {"omop_code": "mg",
+                      "mul": 1e3},
+            'mcg': {'omop_code': 'mg',
+                    'mul': 0.001},
+            'L': {'omop_code': 'mL',
+                  'mul': 1e3},
+            'mL': {'omop_code': 'mL',
+                  'mul': 1},
+            'uL': {'omop_code': 'mL',
+                  'mul': 1e3},
+            'cc': {'omop_code': 'mL',
+                   'mul': 1},
+            'ml': {'omop_code': 'mL',
+                   'mul': 1},
+            'mEq': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            'mEq.': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            'mEQ': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            }
+        
+        
         self.nmp = NewMedicationProcessor(self.dataset,
                                           lf_med=inputevents,
                                           lf_labels=icustays,
@@ -286,8 +313,8 @@ class mimic3Preparator(DataPreparator):
                                           col_dose_unit='AMOUNTUOM',
                                           col_route='ORIGINALROUTE',
                                           col_admittime='INTIME',
-                                          unit_los='day',
-                                          offset_calc=True
+                                          offset_calc=True,
+                                          dose_unit_conversion_dic=dose_unit_conversions
                                         )
         med = self.nmp.run()
         self.save(med, self.med_savepath)
@@ -303,16 +330,16 @@ class mimic3Preparator(DataPreparator):
                       .select('HADM_ID', 'CHARTTIME', 'ITEMID', 'VALUE')
                       .with_columns(
                           pl.col('CHARTTIME').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                          pl.col('HADM_ID').cast(pl.Int64)
+                          pl.col('HADM_ID').cast(pl.Int32)
                           )
-                      .pipe(self.pl_prepare_tstable,
-                           col_measuretime='CHARTTIME',
-                            col_intime='INTIME',
-                            col_variable='ITEMID',
-                            col_mergestayid='HADM_ID',
-                            col_value='VALUE',
-                            unit_los='day'
-                            )
+                        .pipe(self.pl_prepare_tstable,
+                             col_measuretime='CHARTTIME',
+                              col_intime='INTIME',
+                              col_variable='ITEMID',
+                              col_mergestayid='HADM_ID',
+                              col_value='VALUE',
+                              unit_los='day'
+                              )
                       .join(ditems.select('ITEMID', 'LABEL'), on='ITEMID')
                       .drop('HADM_ID', 'ITEMID')
                       .collect())
@@ -331,15 +358,14 @@ class mimic3Preparator(DataPreparator):
                        .drop_nulls()
                        .with_columns(
                            pl.col('CHARTTIME').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                           pl.col('HADM_ID').cast(pl.Int64)
+                           pl.col('HADM_ID').cast(pl.Int32)
                            )
                        .pipe(self.pl_prepare_tstable,
                              col_measuretime='CHARTTIME',
                              col_intime='INTIME',
                              col_variable='ITEMID',
                              col_mergestayid='HADM_ID',
-                             col_value='VALUENUM',
-                             unit_los='day')
+                             col_value='VALUENUM')
                        .join(dlabitems.select('ITEMID', 'LABEL'), on='ITEMID')
                        .drop(columns=['HADM_ID', 'ITEMID'])
                        .collect())

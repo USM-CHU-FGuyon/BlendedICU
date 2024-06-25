@@ -1,3 +1,6 @@
+from collections import OrderedDict
+
+import polars as pl
 import pandas as pd
 import pyarrow as pa
 
@@ -54,7 +57,7 @@ class CDMTables:
             'device_exposure': None,
             'dose_era': None,
             'drug_era': None,
-            'drug_strength': None,
+            'drug_strength': self._drug_strength_schema(),
             'episode': None,
             'episode_event': None,
             'fact_relationship': None,
@@ -97,33 +100,52 @@ class CDMTables:
 
         return cdmtables
     
+
     @staticmethod
     def _measurement_schema():
-        schema = pa.schema([('value_as_number', pa.float32()),
-                            ('time', pa.float32()),
-                            ('visit_occurrence_id', pa.int64()),
-                            ('visit_source_value', pa.string()),
-                            ('person_id', pa.int64()),
-                            ('measurement_datetime', pa.timestamp('s')),
-                            ('measurement_date', pa.date32()),
-                            ('measurement_time', pa.time32('s')),
-                            ('measurement_concept_id', pa.int32()),
-                            ('measurement_source_value', pa.string()),
-                            ('unit_source_value', pa.string()),
-                            ('unit_concept_id', pa.int32()),
-                            ('measurement_id', pa.int64()),
-                            ('measurement_type_concept_id', pa.int32()),
-                            ('operator_concept_id', pa.int32()),
-                            ('value_as_concept_id', pa.int32()),
-                            ('range_low', pa.float32()),
-                            ('range_high', pa.float32()),
-                            ('provider_id', pa.int32()),
-                            ('visit_detail_id', pa.int32()),
-                            ('measurement_source_concept_id', pa.int32()),
-                            ('unit_source_concept_id', pa.int32()),
-                            ('value_source_value', pa.string()),
-                            ('measurement_event_id', pa.int32()),
-                            ('meas_event_field_concept_id', pa.int32())
+        schema = OrderedDict([('value_as_number', pl.Float32),
+                            ('time', pl.Float32),
+                            ('visit_occurrence_id', pl.Int64),
+                            ('visit_source_value', pl.String),
+                            ('person_id', pl.Int64),
+                            ('measurement_datetime', pl.Datetime),
+                            ('measurement_date', pl.Date),
+                            ('measurement_time', pl.Duration),
+                            ('measurement_concept_id', pl.Int32),
+                            ('measurement_source_value', pl.String),
+                            ('unit_source_value', pl.String),
+                            ('unit_concept_id', pl.Int32),
+                            ('measurement_id', pl.UInt64),
+                            ('measurement_type_concept_id', pl.Int32),
+                            ('operator_concept_id', pl.Int32),
+                            ('value_as_concept_id', pl.Int32),
+                            ('range_low', pl.Float32),
+                            ('range_high', pl.Float32),
+                            ('provider_id', pl.Int32),
+                            ('visit_detail_id', pl.Int32),
+                            ('measurement_source_concept_id', pl.Int32),
+                            ('unit_source_concept_id', pl.Int32),
+                            ('value_source_value', pl.String),
+                            ('measurement_event_id', pl.Int32),
+                            ('meas_event_field_concept_id', pl.Int32)])
+        
+        return schema
+    
+    
+    @staticmethod
+    def _drug_strength_schema():
+        schema = OrderedDict([('drug_concept_id', pl.Int32),
+                            ('ingredient_concept_id', pl.Int32),
+                            ('amount_value', pl.Float32),
+                            ('amount_unit_concept_id', pl.Int32),
+                            ('numerator_value', pl.Float32),
+                            ('numerator_unit_concept_id', pl.Int32),
+                            ('denominator_value', pl.Float32),
+                            ('denominator_unit_concept_id', pl.Int32),
+                            ('box_size', pl.Int32),
+                            ('valid_start_date', pl.Date),
+                            ('valid_end_date', pl.Date),
+                            ('invalid_reason', pl.String),
                             ])
         return schema
     
@@ -155,29 +177,29 @@ class CDMTables:
     
     @staticmethod
     def _drug_exposure_schema():
-        schema = pa.schema([('drug_source_value', pa.string()),
-                            ('drug_type_concept_id', pa.int32()),
-                            ('visit_occurrence_id', pa.int64()),
-                            ('person_id', pa.int64()),
-                            ('drug_exposure_start_date', pa.date32()),
-                            ('drug_exposure_start_datetime', pa.timestamp('s')),
-                            ('drug_exposure_end_date', pa.date32()),
-                            ('drug_exposure_end_datetime', pa.timestamp('s')),
-                            ('drug_concept_id', pa.int32()),
-                            ('drug_exposure_id', pa.int32()),
-                            ('verbatim_end_date', pa.date32()),
-                            ('stop_reason', pa.string()),
-                            ('refills', pa.string()),
-                            ('quantity', pa.string()),
-                            ('days_supply', pa.float32()),
-                            ('sig', pa.string()),
-                            ('route_concept_id', pa.int32()),
-                            ('lot_number', pa.string()),
-                            ('provider_id', pa.int32()),
-                            ('visit_detail_id', pa.int32()),
-                            ('drug_source_concept_id', pa.int32()),
-                            ('route_source_value', pa.string()),
-                            ('dose_unit_source_value', pa.string()),
+        schema = OrderedDict([('drug_source_value', pl.String),
+                            ('drug_type_concept_id', pl.Int32),
+                            ('visit_occurrence_id', pl.Int64),
+                            ('person_id', pl.Int64),
+                            ('drug_exposure_start_date', pl.Date),
+                            ('drug_exposure_start_datetime', pl.Datetime),
+                            ('drug_exposure_end_date', pl.Date),
+                            ('drug_exposure_end_datetime', pl.Datetime),
+                            ('drug_concept_id', pl.Int32),
+                            ('drug_exposure_id', pl.UInt64),
+                            ('verbatim_end_date', pl.Date),
+                            ('stop_reason', pl.String),
+                            ('refills', pl.String),
+                            ('quantity', pl.String),
+                            ('days_supply', pl.Float32),
+                            ('sig', pl.String),
+                            ('route_concept_id', pl.Int32),
+                            ('lot_number', pl.String),
+                            ('provider_id', pl.Int32),
+                            ('visit_detail_id', pl.Int32),
+                            ('drug_source_concept_id', pl.Int32),
+                            ('route_source_value', pl.String),
+                            ('dose_unit_source_value', pl.String),
                             ])
         return schema
     

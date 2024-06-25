@@ -4,7 +4,7 @@ This code extracts the data from the Amsterdam dataset
 
 It creates a set of .parquet files at the specified path 
 ('hirid' in paths.json). 
-Approximate running time: 4h.
+
 """
 from hirid_preprocessing.HiridPreparator import hiridPreparator
 

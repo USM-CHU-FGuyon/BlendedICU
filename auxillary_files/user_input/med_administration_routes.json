@@ -1,0 +1,51 @@
+{
+    "37159009":[
+    "p os",
+    "p.o",
+    "PO",
+    "Oral",
+    "ORAL"
+    ],
+    "37159010": [
+    "enteral"
+    ],
+    "37159020":[
+        "Drip",
+        "Intravenous Infusion",
+        "Intravenous",
+        "Intravenous Push",
+        "IV Drip",
+        "iv-inf",
+        "iv-inj",
+        "per-iv",
+        "iv",
+        "IV", "IVPB", "IV Push", "IV PUSH",
+        "Intravenous", "INTRAVENOU", "IntraVENOUS", "INTRAVEN"
+    ],
+    "37159012": [
+    "sc-inj",
+    "transcutan",
+    "subCUT", "Subcutaneous", "SubQ"
+    ],
+    "4302260": [
+    "p rect",
+    "p rectal"
+    
+    ],
+    "4202446": [
+    "subling"
+    ],
+    "0": [
+    "cv-inf",
+    "cv-inj",
+    "p.ms",
+    "ms",
+    "paravert.",
+    "inhal",
+    "Inh.Beatmung",
+    "ep-inf",
+    "ep-inj",
+    "ip-inf",
+    "i.ventr, EVD"
+    ]
+}

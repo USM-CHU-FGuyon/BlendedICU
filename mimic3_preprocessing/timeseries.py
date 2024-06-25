@@ -60,10 +60,35 @@ class mimic3TSP(TimeseriesProcessor):
                 .unique()
                 .collect().to_numpy().flatten())
         
-    def run(self, reset_dir=None):
-        self.reset_dir(reset_dir)
-        self.stays = self._get_stays()
-        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
+    def run_harmonization(self):
+        lf_medication = self.harmonize_columns(self.lf_medication,
+                                                    **self.colnames_med)
+        timeseries = self.harmonize_columns(self.lf_timeseries,
+                                                 **self.colnames_ts)
+        timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
+                                                     **self.colnames_lab)
+        outputevents = self.harmonize_columns(self.lf_outputevents,
+                                                   **self.colnames_outputevents)
+        
+        lf_timeser = pl.concat([timeseries,
+                                timeseries_lab,
+                                outputevents],
+                                how='diagonal')
+        
+                
+        lf_med = self.filter_tables(lf_medication,
+                                    kept_variables=self.kept_med)
+        
+        lf_ts = self.filter_tables(lf_timeser,
+                                   kept_variables=self.kept_ts)
+        
+    
+        self.timeseries_to_long(lf_ts)
+        self.medication_to_long(lf_med)
+        
+    
+    def run_preprocessing(self):
+
         
         lf_medication = self.harmonize_columns(self.lf_medication,
                                                     **self.colnames_med)
@@ -84,6 +109,10 @@ class mimic3TSP(TimeseriesProcessor):
         
         lf_ts = self.filter_tables(lf_timeser,
                                    kept_variables=self.kept_ts)
+        
+    
+        self.stays = self._get_stays()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
         
         lf_formatted_ts = self.pl_format_timeseries(lf_ts)
         lf_formatted_med = self.pl_format_meds(lf_med)

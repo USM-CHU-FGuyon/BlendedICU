@@ -7,7 +7,7 @@ blendedicuTSP creates the processed blendedICU dataset by adding resampling,
 missing values imputation and clipping&normalization steps. All these steps 
 are optional and customizable using the config.json file.
 """
-from blended_preprocessing.timeseries import blendedicuTSP
+
 from blended_preprocessing.flat_and_labels import blended_FLProcessor
 from blended_preprocessing.diagnoses import blended_DiagProcessor
 
@@ -21,9 +21,3 @@ flp.run_flat_and_labels()
 dp = blended_DiagProcessor(datasets=['mimic4'])
 
 dp.run()
-
-tsp = blendedicuTSP(compute_index=False)
-
-tsp.run(reset_dir=False)
-
-

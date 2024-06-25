@@ -1,5 +1,3 @@
-import polars as pl
-
 from database_processing.timeseriesprocessor import TimeseriesProcessor
 
 
@@ -14,13 +12,7 @@ class amsterdamTSP(TimeseriesProcessor):
         super().__init__(dataset='amsterdam')
         self.lf_ts = self.scan(self.savepath+ts_chunks)
         self.lf_listitems = self.scan(self.savepath+listitems_pth)
-        self.lf_medication = (self.scan(self.med_savepath)
-                           .select('admissionid',
-                                             'label',
-                                             'original_drugname',
-                                             'start',
-                                             'end',
-                                             'value'))
+        self.lf_medication = self.scan(self.med_savepath)
 
         self.gcs_scores = self.scan(self.savepath+gcs_scores_pth)
         
@@ -52,26 +44,35 @@ class amsterdamTSP(TimeseriesProcessor):
                       .flatten())
         return self.stays
     
-    def run(self, reset_dir=None):
-        self.reset_dir(reset_dir)
-        self.stays = self.get_stays()
-        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=5_000)
-        
-        self.ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)
-        self.listitems = self.harmonize_columns(self.lf_listitems, **self.colnames_ts)
+    def run_harmonization(self):
+
+        lf_ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)
         lf_med = self.harmonize_columns(self.lf_medication, **self.colnames_med)
         
-        lf_ts = pl.concat([self.ts, self.listitems], how='diagonal_relaxed')
+        lf_ts = self.filter_tables(lf_ts, kept_variables=self.kept_ts,)
+
+        self.timeseries_to_long(lf_long=lf_ts,
+                                lf_wide=self.gcs_scores)
+        self.medication_to_long(lf_med)
+    
+    def run_for_preprocessed(self, reset_dir=None):
+        self.reset_dir(reset_dir)
+
+        lf_ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)
+        lf_med = self.harmonize_columns(self.lf_medication, **self.colnames_med)
         
         lf_med_formatted = self.pl_format_meds(lf_med)
 
-        for chunk_number, stays in enumerate(self.stay_chunks):
+        self.stays = self.get_stays()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=5_000)
 
+        for chunk_number, stays in enumerate(self.stay_chunks):
             print(f'Chunk {chunk_number}')
             self.ts_chunk = (self.filter_tables(lf_ts,
-                                           kept_variables=self.kept_ts,
-                                           kept_stays=stays)
-                             .collect(streaming=True))
+                                                kept_variables=self.kept_ts,
+                                                kept_stays=stays)
+                             .collect(streaming=True
+                                      ))
             
             self.med_formatted_chunk = (self.filter_tables(lf_med_formatted,
                                             kept_variables=self.kept_med,
@@ -88,5 +89,3 @@ class amsterdamTSP(TimeseriesProcessor):
             self.newprocess_tables(ts_formatted_chunk,
                                    med=self.med_formatted_chunk.collect().to_pandas(),
                                    chunk_number=chunk_number)
-
-

@@ -34,11 +34,9 @@ class mimic3_FLProcessor(FlatAndLabelsProcessor):
                                         'FIRST_CAREUNIT': 'unit_type',
                                         'DISCHARGE_LOCATION': 'discharge_location',
                                         'INTIME': 'intime',
-                                        'LOS': 'los',
+                                        'LOS': self.los_col,
                                         'HADM_ID': 'hadm_id'})
                   .set_index(self.idx_col)
-                  .pipe(self.harmonize_los,
-                        label_los_col='los')
                   .dropna(subset='intime')
                   .astype({'uniquepid': str, 'hadm_id': str})
                   .sort_index())

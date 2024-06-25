@@ -56,47 +56,80 @@ class mimic4TSP(TimeseriesProcessor):
     def get_stays(self):
         return self.labels.stay_id.unique()
 
-    def run(self, reset_dir=None):
-        self.reset_dir(reset_dir)
+    def run_harmonization(self):
         
-        self.lf_outputevents = self.harmonize_columns(self.lf_outputevents,
+        lf_outputevents = self.harmonize_columns(self.lf_outputevents,
                                                    **self.colnames_outputevents)
         
-        self.lf_timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
+        lf_timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
                                                    **self.colnames_lab)
         
-        self.lf_timeseries = self.harmonize_columns(self.lf_timeseries,
+        lf_timeseries = self.harmonize_columns(self.lf_timeseries,
                                                    **self.colnames_ts)
         
-        self.lf_medication = self.harmonize_columns(self.lf_medication,
+        lf_medication = self.harmonize_columns(self.lf_medication,
                                                    **self.colnames_med)
         
-        lf_ts = pl.concat([self.lf_timeseries,
-                           self.lf_timeseries_lab,
-                           self.lf_outputevents],
-                             how='diagonal')
+        lf_ts = pl.concat([lf_timeseries,
+                           lf_timeseries_lab,
+                           lf_outputevents],
+                           how='diagonal')
 
-        self.stays = self.get_stays()
-        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=5_000)
 
-        lf_med = self.filter_tables(self.lf_medication,
+
+        lf_med = self.filter_tables(lf_medication,
                                     kept_variables=self.kept_med)
         
         lf_ts = self.filter_tables(lf_ts,
                                    kept_variables=self.kept_ts)
         
+        
+        self.timeseries_to_long(lf_ts)
+        self.medication_to_long(lf_med)
+
+    def run_preprocessing(self, reset_dir=None):
+        self.reset_dir(reset_dir)
+        
+        lf_outputevents = self.harmonize_columns(self.lf_outputevents,
+                                                   **self.colnames_outputevents)
+        
+        lf_timeseries_lab = self.harmonize_columns(self.lf_timeseries_lab,
+                                                   **self.colnames_lab)
+        
+        lf_timeseries = self.harmonize_columns(self.lf_timeseries,
+                                                   **self.colnames_ts)
+        
+        lf_medication = self.harmonize_columns(self.lf_medication,
+                                                   **self.colnames_med)
+        
+        lf_ts = pl.concat([lf_timeseries,
+                           lf_timeseries_lab,
+                           lf_outputevents],
+                           how='diagonal')
+
+
+
+        lf_med = self.filter_tables(lf_medication,
+                                    kept_variables=self.kept_med)
+        
+        lf_ts = self.filter_tables(lf_ts,
+                                   kept_variables=self.kept_ts)
+        
+    
+        
+        self.stays = self.get_stays()
+        self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
         lf_formatted_ts = self.pl_format_timeseries(lf_ts)
         lf_formatted_med = self.pl_format_meds(lf_med)
 
         for chunk_number, stay_chunk in enumerate(self.stay_chunks):
             
             lf_formatted_med_chunked = self.filter_tables(lf_formatted_med,
-                                        kept_stays=stay_chunk)
+                                                          kept_stays=stay_chunk)
             
             lf_formatted_ts_chunked = self.filter_tables(lf_formatted_ts,
-                                                 kept_stays=stay_chunk)
+                                                         kept_stays=stay_chunk)
 
-                
             self.newprocess_tables(lf_formatted_ts_chunked,
                                   med=lf_formatted_med_chunked,
                                   chunk_number=chunk_number)

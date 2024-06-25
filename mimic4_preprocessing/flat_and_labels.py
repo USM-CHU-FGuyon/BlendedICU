@@ -30,10 +30,9 @@ class mimic4_FLProcessor(FlatAndLabelsProcessor):
                                         'stay_id': self.idx_col,
                                         'subject_id': 'uniquepid',
                                         'hospital_expire_flag': self.mor_col,
+                                        'los': self.los_col,
                                         'first_careunit': 'unit_type'})
                   .set_index(self.idx_col)
-                  .pipe(self.harmonize_los,
-                        label_los_col='los')
                   .astype({'uniquepid': str, 'hadm_id': str})
                   .sort_index())
 

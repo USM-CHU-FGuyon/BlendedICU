@@ -50,6 +50,7 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
                   .rename(columns={
                               'patientunitstayid': self.idx_col,
                               'unitdischargestatus': self.mor_col,
+                              'unitdischargeoffset': self.los_col,
                               'unitdischargelocation': 'discharge_location',
                               'hospitalid': 'care_site',
                               'unittype': 'unit_type'})
@@ -68,9 +69,6 @@ class eicu_FLProcessor(FlatAndLabelsProcessor):
         labels = (labels.pipe(self.clip_and_norm,
                               clip=True,
                               recompute_quantiles=True,
-                              cols=['height', 'weight'])
-                  .pipe(self.harmonize_los,
-                        label_los_col='unitdischargeoffset',
-                        unit='minute'))
+                              cols=['height', 'weight']))
 
         return labels

@@ -1,7 +1,5 @@
-from pathlib import Path
-
 import pandas as pd
-import numpy as np
+import polars as pl
 
 from database_processing.dataprocessor import DataProcessor
 
@@ -11,7 +9,7 @@ class FlatAndLabelsProcessor(DataProcessor):
         super().__init__(dataset, **kwargs)
         self.flat = None
         self.labels = None
-        self.ts_patients = self.get_ts_patients()
+        #self.all_patients = self._get_all_patients()
         
     def preprocess_labels(self):
         """
@@ -58,21 +56,40 @@ class FlatAndLabelsProcessor(DataProcessor):
     def _reindexing(self, df, astypes={}):
         df.index = df.index.map(lambda x: f'{self.dataset}-{x}')
         return (df.rename_axis(self.idx_col)
-                  .reindex(self.ts_patients)
                   .astype(astypes)
                   .dropna(how='all'))
 
-    def get_ts_patients(self):
-        """
-        Gets the sorted list of patients having timeseries data.
-        """
-        ts_dir = Path(self.partiallyprocessed_ts_dir)
-        regex = '*' if self.dataset=='blended' else f'{self.dataset}*'
+    '''
+    def _get_patients_from_labels(self):
+        lst = []
+        for pth in self.labels_pths.values():
+            lf = (pl.scan_parquet(pth)
+                  .select(pl.col('patient').unique())
+                  )
+            lst.append(lf)
+        patient_list = pl.concat(lst).collect().to_pandas().patient.to_list()
+        return patient_list
+    '''
 
-        index_pths = [f'{f}/index.csv' for f in ts_dir.glob(regex) if f.is_dir()]
-        index_dfs = [pd.read_csv(pth, sep=';', index_col='patient') for pth in index_pths]
-        index_df = pd.concat(index_dfs)
-        return sorted(np.unique(index_df.index))
+    '''check if necessary.
+    def _get_patients_from_meds(self):
+        lst = (pl.scan_parquet(self.dir_long_medication+'/*.parquet')
+              .select(pl.col('patient').unique())
+              .collect(streaming=True)
+              .to_pandas().patient.to_list())
+        return lst
+    '''
+
+
+    def _get_all_stays(self):
+        """
+        Gets the list of patients having flat, timeseries or medication data.
+        """
+        labels_patients = self._get_patients_from_labels()
+        #med_patients = self._get_patients_from_meds()
+
+
+        return
 
     def run_labels(self):
         self.labels = self.preprocess_labels()

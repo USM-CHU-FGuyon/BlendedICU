@@ -73,10 +73,9 @@ class Ams_FLProcessor(FlatAndLabelsProcessor):
 
         labels[self.mor_col] = ((labels['destination'] == 'Overleden')
                                 .astype(int))
+        
         labels['gender'] = (labels.gender.fillna('unknown')
                                   .replace(self.gender_mapping))
-
-        labels = self.harmonize_los(labels, 'lengthofstay', unit='hour')
 
         labels['raw_age'] = labels['agegroup']
         labels['raw_weight'] = labels['weightgroup']

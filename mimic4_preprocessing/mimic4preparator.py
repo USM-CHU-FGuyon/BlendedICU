@@ -47,7 +47,6 @@ class mimic4Preparator(DataPreparator):
 
         self.outputevents_savepath = self.savepath + 'timeseriesoutputs.parquet'
         self.lab_savepath = self.savepath + 'timeserieslab.parquet'
-        self.flat_savepath = self.savepath + 'flat_features.parquet'
         self.ts_savepath = self.savepath + 'timeseries.parquet'
         
         self.col_los = 'los'
@@ -234,6 +233,32 @@ class mimic4Preparator(DataPreparator):
         icustays = (self.icustays.lazy()
                     .select('stay_id', 'intime', 'los'))
         
+        dose_unit_conversions = {
+            'gm': {"omop_code": "mg",
+                    "mul": 1e3},
+            'grams': {"omop_code": "mg",
+                      "mul": 1e3},
+            'mcg': {'omop_code': 'mg',
+                    'mul': 0.001},
+            'L': {'omop_code': 'mL',
+                  'mul': 1e3},
+            'mL': {'omop_code': 'mL',
+                  'mul': 1},
+            'uL': {'omop_code': 'mL',
+                  'mul': 1e3},
+            'cc': {'omop_code': 'mL',
+                   'mul': 1},
+            'ml': {'omop_code': 'mL',
+                   'mul': 1},
+            'mEq': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            'mEq.': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            'mEQ': {'omop_code': '10*-3.eq',
+                    'mul': 1},
+            }
+        
+        
         self.nmp = NewMedicationProcessor('mimic4',
                                           lf_med=inputevents,
                                           lf_labels=icustays,
@@ -246,7 +271,8 @@ class mimic4Preparator(DataPreparator):
                                           col_dose_unit='amountuom',
                                           col_route=None,
                                           col_admittime='intime',
-                                          offset_calc=True
+                                          offset_calc=True,
+                                          dose_unit_conversion_dic=dose_unit_conversions
                                         )
         med = self.nmp.run()
         self.save(med, self.med_savepath)

@@ -4,7 +4,6 @@ import pandas as pd
 import polars as pl
 
 from database_processing.datapreparator import DataPreparator
-from database_processing.medicationprocessor import MedicationProcessor
 from database_processing.newmedicationprocessor import NewMedicationProcessor
 
 

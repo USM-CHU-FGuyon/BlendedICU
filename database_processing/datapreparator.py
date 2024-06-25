@@ -82,16 +82,6 @@ class DataPreparator(DataProcessor):
         if pqwriter:
             pqwriter.close()
         print('  -> Done')
-        
-    def _to_seconds(self, df, col, unit='second'):
-        k = {'day': 86400,
-             'hour': 3600,
-             'minute': 60,
-             'second': 1,
-             'milisecond': 1/1000}
-
-        df[col] = k[unit]*df[col]
-        return df
 
     def split_and_save_chunks(self, df, savepath):
         self.chunk_idx = 0
@@ -125,7 +115,7 @@ class DataPreparator(DataProcessor):
                             unit_los='second',
                             cast_to_float=True,
                             col_value=None,
-                            additional_expr=[]
+                            additional_expr=None
                             ):
         
         if cast_to_float and col_value is None:
@@ -154,6 +144,7 @@ class DataPreparator(DataProcessor):
                     )
                 .drop(col_measuretime, col_intime)
                 )
+
             return lf
         
         def _offset_to_duration(lf, col_offset, alias, unit):
@@ -179,10 +170,9 @@ class DataPreparator(DataProcessor):
         
         def _expressions(col_value, cast_to_float, additional_expr):
             '''
-            Convert time to a number of seconds,
             Casts values to float32
             '''
-            expr = [pl.col(self.col_offset).dt.seconds()] + additional_expr
+            expr = [] if additional_expr is None else additional_expr
             if cast_to_float:
                 expr.append(pl.col(col_value).cast(pl.Float32, strict=False))
             return expr
@@ -214,22 +204,17 @@ class DataPreparator(DataProcessor):
               .pipe(_compute_offset,
                     col_measuretime=col_measuretime,
                     col_intime=col_intime)
-              .pipe(_offset_to_duration,
-                    col_offset=self.col_los,
-                    alias=self.col_los,
-                    unit=unit_los)
-              .pipe(_offset_to_duration,
-                    col_offset=col_offset,
-                    alias=self.col_offset,
-                    unit=unit_offset)
-              .pipe(_clip_time)
-              .pipe(_keepvars, col_variable=col_variable, keepvars=keepvars)
-              .with_columns(
-                  _expressions(col_value, cast_to_float, additional_expr)
-                  )
-              .pipe(_dropnull_values, col_value=col_value)
-              .drop(dropcols)
-            )
-        
+            .pipe(_offset_to_duration,
+                  col_offset=col_offset,
+                  alias=self.col_offset,
+                  unit=unit_offset)
+            .pipe(_clip_time)
+            .pipe(_keepvars, col_variable=col_variable, keepvars=keepvars)
+            .with_columns(
+                _expressions(col_value, cast_to_float, additional_expr)
+                )
+            .pipe(_dropnull_values, col_value=col_value)
+            .drop(dropcols)
+              )
         return lf
-    
+

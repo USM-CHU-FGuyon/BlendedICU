@@ -25,7 +25,7 @@ class mimic4_DiagProcessor(DiagnosesProcessor):
         
         self.labels = (self.labels.assign(
                             outtime=lambda x: ((pd.to_datetime(x.intime)
-                              + pd.to_timedelta(x.true_lengthofstay, unit='D')
+                              + pd.to_timedelta(x.lengthofstay, unit='D')
                               ).dt.round('s')))
                         .astype({'hadm_id': int}))
         

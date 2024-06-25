@@ -41,6 +41,7 @@ class DataProcessor:
         self.unittype_file = self.user_input_pth + 'unit_type_v2.json'
         self.dischargeloc_file = self.user_input_pth + 'discharge_location_v2.json'
         self.admissionorigin_file = self.user_input_pth + 'admission_origins_v2.json'
+        self.pth_drug_admin_route = self.user_input_pth + 'med_administration_routes.json'
 
         self.ohdsi_med = self._load_ohdsi_mapping(self.med_file)
         self.ohdsi_diag = self._load_ohdsi_mapping(self.diag_file)
@@ -51,6 +52,8 @@ class DataProcessor:
         self.formatted_med_dir = self.blendedicu_pth + 'formatted_medications/'
         self.preprocessed_ts_dir = self.blendedicu_pth + 'preprocessed_timeseries/'
         self.partiallyprocessed_ts_dir = self.blendedicu_pth + 'partially_processed_timeseries/'
+        self.dir_long_timeseries = self.blendedicu_pth + 'long_timeseries/'
+        self.dir_long_medication = self.blendedicu_pth + 'long_medication/'
 
         self._mkdirs()
 
@@ -78,6 +81,7 @@ class DataProcessor:
         self.FORWARD_FILL = self.config['FORWARD_FILL']['value']
 
         self.admission_origins = self._load_mapping(self.admissionorigin_file)
+        self.mapping_drug_route = self._load_mapping(self.pth_drug_admin_route)
         self.discharge_locations = self._load_mapping(self.dischargeloc_file)
         self.unit_types = self._load_mapping(self.unittype_file)
         self.med_mapping = self._label_to_blended_mapping(self.ohdsi_med)
@@ -86,9 +90,10 @@ class DataProcessor:
         self.labels = None
         self.med_savepath = f'{self.savepath}/medication.parquet'
         self.labels_savepath = f'{self.savepath}/labels.parquet'
-        self.flat_savepath = f'{self.savepath}/flat_features.parquet'
+        self.flat_savepath = f'{self.savepath}/flat.parquet'
         self.diag_savepath = f'{self.savepath}/diagnoses.parquet'
 
+        
     def _preprocessed_pth(self, dataset, name):
         return (f'{self.data_pth}/'
                 +self._datadir_name(dataset)
@@ -187,7 +192,7 @@ class DataProcessor:
             return pl.scan_parquet(pth+'/*.parquet')
         return pl.scan_parquet(pth)
 
-    def save(self, df, savepath, pyarrow_schema=None, verbose=True):
+    def save(self, df, savepath, pyarrow_schema=None, verbose=True, row_group_size=None):
         """
         convenience function: save safely a file to parquet by creating the 
         parent directory if it does not exist.
@@ -198,7 +203,7 @@ class DataProcessor:
             if verbose:
                 print(f' --> Sinking {savepath}', end=" ")
             try:
-                df.sink_parquet(savepath)
+                df.sink_parquet(savepath, row_group_size=row_group_size)
                 print('done')
                 return df
             except pl.exceptions.InvalidOperationError as e:

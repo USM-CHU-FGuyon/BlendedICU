@@ -72,52 +72,103 @@ class eicuTSP(TimeseriesProcessor):
     def _get_stays(self):
         return self.labels.select('patientunitstayid').unique().collect().to_numpy().flatten()
     
-    def run(self, reset_dir=None):
+    
+    def run_harmonization(self):
+        lf_med = self.harmonize_columns(self.lf_med,
+                                             **self.colnames_med)
+
+        lf_tsresp = self.harmonize_columns(self.lf_tsresp,
+                                                **self.colnames_resp)
+        
+        lf_tsnurse = self.harmonize_columns(self.lf_tsnurse,
+                                                 **self.colnames_nurse)
+        
+        lf_tsinout = self.harmonize_columns(self.lf_tsinout,
+                                            **self.colnames_inout)
+        
+        lf_tslab = self.harmonize_columns(self.lf_tslab,
+                                          **self.colnames_lab)
+        
+        lf_tsperiodic = self.harmonize_columns(self.lf_tsperiodic,
+                                               **self.colnames_tshor)
+        
+        lf_tsaperiodic = self.harmonize_columns(self.lf_tsaperiodic,
+                                                **self.colnames_tshor)
+
+        lf_ts_ver = pl.concat([
+            lf_tslab,
+            lf_tsresp,
+            lf_tsnurse,
+            lf_tsinout,
+            ])
+
+        #not collecting here causes errors in the following methods. polars bug ?
+        lf_ts_hor = (pl.concat([lf_tsperiodic, lf_tsaperiodic],
+                              how='diagonal',
+                              rechunk=True)
+                     .collect(streaming=True))
+        
+        lf_ts_ver = self.filter_tables(lf_ts_ver,
+                                    kept_variables=self.kept_ts)
+        
+        self.timeseries_to_long(lf_ts_ver, lf_ts_hor.lazy())
+        self.medication_to_long(lf_med)
+        
+    
+    def run_preprocessing(self, reset_dir=None):
 
         self.reset_dir(reset_dir)
+
+        
+        lf_med = self.harmonize_columns(self.lf_med,
+                                             **self.colnames_med)
+
+        lf_tsresp = self.harmonize_columns(self.lf_tsresp,
+                                                **self.colnames_resp)
+        
+        lf_tsnurse = self.harmonize_columns(self.lf_tsnurse,
+                                                 **self.colnames_nurse)
+        
+        lf_tsinout = self.harmonize_columns(self.lf_tsinout,
+                                            **self.colnames_inout)
+        
+        lf_tslab = self.harmonize_columns(self.lf_tslab,
+                                          **self.colnames_lab)
+        
+        lf_tsperiodic = self.harmonize_columns(self.lf_tsperiodic,
+                                               **self.colnames_tshor)
+        
+        lf_tsaperiodic = self.harmonize_columns(self.lf_tsaperiodic,
+                                                **self.colnames_tshor)
+
+        lf_ts_ver = pl.concat([
+            lf_tslab,
+            lf_tsresp,
+            lf_tsnurse,
+            lf_tsinout,
+            ])
+
+        #not collecting here causes errors in the following methods.
+        lf_ts_hor = (pl.concat([lf_tsperiodic, lf_tsaperiodic],
+                              how='diagonal',
+                              rechunk=True)
+                     .collect(streaming=True))
+
+        lf_ts_ver = self.filter_tables(lf_ts_ver,
+                                    kept_variables=self.kept_ts)
+
+        self.timeseries_to_long(lf_ts_ver, lf_ts_hor.lazy())
+        self.medication_to_long(lf_med)
+
+
+        med_formatted = self.pl_format_meds(lf_med)
+
         self.stays = self._get_stays()
         #decrease n_patient_chunk for lower memory usage.
         self.stay_chunks = self.get_stay_chunks(n_patient_chunk=10_000)
-        
-        self.lf_med = self.harmonize_columns(self.lf_med,
-                                             **self.colnames_med)
-
-        self.lf_tsresp = self.harmonize_columns(self.lf_tsresp,
-                                                **self.colnames_resp)
-        
-        self.lf_tsnurse = self.harmonize_columns(self.lf_tsnurse,
-                                                 **self.colnames_nurse)
-        
-        self.lf_tsinout = self.harmonize_columns(self.lf_tsinout,
-                                                 **self.colnames_inout)
-        
-        self.lf_tslab = self.harmonize_columns(self.lf_tslab,
-                                               **self.colnames_lab)
-        
-        self.lf_tsperiodic = self.harmonize_columns(self.lf_tsperiodic,
-                                                    **self.colnames_tshor)
-        
-        self.lf_tsaperiodic = self.harmonize_columns(self.lf_tsaperiodic,
-                                                     **self.colnames_tshor)
-
-        lf_ts_ver = pl.concat([
-            self.lf_tslab,
-            self.lf_tsresp,
-            self.lf_tsnurse,
-            self.lf_tsinout,
-            ])
-
-        lf_ts_hor = (self.lf_tsperiodic
-                     .join(self.lf_tsaperiodic,
-                           on=(self.idx_col_int, self.time_col),
-                           how='outer_coalesce')
-                     )
-
-
-        med_formatted = self.pl_format_meds(self.lf_med)
 
         for i, stay_chunk in enumerate(self.stay_chunks):
-            1/0
+
             self.ts_hor_chunk = (self.filter_tables(lf_ts_hor,
                                         kept_stays=stay_chunk,
                                         ).collect())
