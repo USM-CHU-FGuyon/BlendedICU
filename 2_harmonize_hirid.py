@@ -7,7 +7,7 @@ Approximate running time: 2min
 """
 from hirid_preprocessing.flat_and_labels import Hir_FLProcessing
 from hirid_preprocessing.timeseries import hiridTSP
-import polars as pl
+
 tsp = hiridTSP(ts='timeseries.parquet',
                 pharma='medication.parquet')
 

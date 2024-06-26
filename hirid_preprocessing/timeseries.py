@@ -45,7 +45,9 @@ class hiridTSP(TimeseriesProcessor):
         
         
     def run_preprocessing(self, reset_dir=None):
-
+        raise UserWarning("This function is not maintained. It should be replaced"
+                          "by a cleaner/faster alternative in the future.\n"
+                          "Contributions welcome.")
         self.reset_dir(reset_dir)
 
         kept_variables = (self.kept_ts+['Body weight', 'Body height measure'])

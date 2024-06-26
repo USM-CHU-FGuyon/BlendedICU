@@ -8,9 +8,9 @@ class amsterdamTSP(TimeseriesProcessor):
     * 1 wide table: the gcs_score tables that was computed in 1_amsterdam.py
     * 1 medication table that was computed in 1_amsterdam.py
     """
-    def __init__(self, ts_chunks, listitems_pth, gcs_scores_pth):
+    def __init__(self, ts_pth, listitems_pth, gcs_scores_pth):
         super().__init__(dataset='amsterdam')
-        self.lf_ts = self.scan(self.savepath+ts_chunks)
+        self.lf_ts = self.scan(self.savepath+ts_pth)
         self.lf_listitems = self.scan(self.savepath+listitems_pth)
         self.lf_medication = self.scan(self.med_savepath)
 
@@ -56,6 +56,11 @@ class amsterdamTSP(TimeseriesProcessor):
         self.medication_to_long(lf_med)
     
     def run_for_preprocessed(self, reset_dir=None):
+        raise UserWarning("This function is not maintained. It should be replaced"
+                          "by a cleaner/faster alternative in the future.\n"
+                          "Contributions welcome.")
+        
+        
         self.reset_dir(reset_dir)
 
         lf_ts = self.harmonize_columns(self.lf_ts, **self.colnames_ts)

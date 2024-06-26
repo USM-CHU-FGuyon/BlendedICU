@@ -102,11 +102,13 @@ class eicuTSP(TimeseriesProcessor):
             lf_tsinout,
             ])
 
+        print('Collecting tsperiodic and tsaperiodic', end='')
         #not collecting here causes errors in the following methods. polars bug ?
         lf_ts_hor = (pl.concat([lf_tsperiodic, lf_tsaperiodic],
                               how='diagonal',
                               rechunk=True)
                      .collect(streaming=True))
+        print('  -> Done')
         
         lf_ts_ver = self.filter_tables(lf_ts_ver,
                                     kept_variables=self.kept_ts)
@@ -116,7 +118,9 @@ class eicuTSP(TimeseriesProcessor):
         
     
     def run_preprocessing(self, reset_dir=None):
-
+        raise UserWarning("This function is not maintained. It should be replaced"
+                          "by a cleaner/faster alternative in the future.\n"
+                          "Contributions welcome.")
         self.reset_dir(reset_dir)
 
         

@@ -384,7 +384,7 @@ class mimic3Preparator(DataPreparator):
               .drop_nulls()
               .with_columns(
                   pl.col('CHARTTIME').str.to_datetime("%Y-%m-%d %H:%M:%S"),
-                  pl.col('ICUSTAY_ID').cast(pl.Int64)
+                  pl.col('ICUSTAY_ID').cast(pl.Int32)
                   )
               .pipe(self.pl_prepare_tstable,
                     col_measuretime='CHARTTIME',
@@ -394,6 +394,7 @@ class mimic3Preparator(DataPreparator):
                     unit_los='day')
               .join(ditems.select('ITEMID', 'LABEL'), on='ITEMID')
               .drop('ITEMID')
-              .collect(streaming=True))
+              #.collect(streaming=True)
+              )
 
         self.save(ts, self.ts_savepath)

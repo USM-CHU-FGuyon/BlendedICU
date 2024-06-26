@@ -88,6 +88,9 @@ class mimic4TSP(TimeseriesProcessor):
         self.medication_to_long(lf_med)
 
     def run_preprocessing(self, reset_dir=None):
+        raise UserWarning("This function is not maintained. It should be replaced"
+                          "by a cleaner/faster alternative in the future.\n"
+                          "Contributions welcome.")
         self.reset_dir(reset_dir)
         
         lf_outputevents = self.harmonize_columns(self.lf_outputevents,

@@ -224,13 +224,19 @@ class TimeseriesProcessor(DataProcessor):
                            lf_long=None,
                            lf_wide=None,
                            sink=True):
-        cols_index = {self.idx_col: pl.Int64, self.time_col: pl.Int64}
+        cols_index = {self.idx_col: pl.Int64, self.time_col: pl.Duration}
         if lf_wide is None:
             lf_wide = pl.LazyFrame(schema=cols_index|{'dummy': pl.Float32})
         if lf_long is None:
-            lf_long = pl.LazyFrame(schema=cols_index | {'variable':pl.String, 'value': pl.Float32})
+            lf_long = pl.LazyFrame(schema=cols_index | {'variable':pl.String,
+                                                        'value': pl.Float32})
 
-        lf_wide_melted = lf_wide.melt(['patient', 'time']).with_columns(pl.col('value').cast(pl.Float32, strict=False))
+        lf_wide_melted = (lf_wide
+                          .melt(['patient', 'time'])
+                          .with_columns(
+                              pl.col('value').cast(pl.Float32, strict=False)
+                              )
+                          )
         
         lf = (pl.concat([df.select(sorted(df.columns)) for df in [lf_wide_melted, lf_long]], how='vertical_relaxed')
               .with_columns(

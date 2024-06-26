@@ -7,7 +7,7 @@ Approximate running time: 30min.
 """
 from eicu_preprocessing.flat_and_labels import eicu_FLProcessor
 from eicu_preprocessing.timeseries import eicuTSP
-import polars as pl
+
 tsp = eicuTSP(
     lab_pth='lab.parquet',
     resp_pth='tsresp.parquet',

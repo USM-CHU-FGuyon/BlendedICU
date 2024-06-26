@@ -82,13 +82,14 @@ class mimic3TSP(TimeseriesProcessor):
         lf_ts = self.filter_tables(lf_timeser,
                                    kept_variables=self.kept_ts)
         
-    
         self.timeseries_to_long(lf_ts)
         self.medication_to_long(lf_med)
         
     
     def run_preprocessing(self):
-
+        raise UserWarning("This function is not maintained. It should be replaced"
+                          "by a cleaner/faster alternative in the future.\n"
+                          "Contributions welcome.")
         
         lf_medication = self.harmonize_columns(self.lf_medication,
                                                     **self.colnames_med)
