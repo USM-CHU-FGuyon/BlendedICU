@@ -14,15 +14,15 @@ from omop_cdm import cdm
 class OMOP_converter(blendedicuTSP):
     def __init__(self,
                  initialize_tables=False,
-                 recompute_index=True,
                  ts_pths=None,
                  med_pths=None):
+        
         super().__init__()
+        self.schemas = cdm.schemas
         self.tables_initialized = False
         self.data_pth = self.savepath
         self.ref_date = datetime(year=2000, month=1, day=1)
         self.pl_ref_date = pl.datetime(year=2023, month=1, day=1)
-        
         self.end_date = datetime(year=2099, month=12, day=31)
         self.adm_measuredat = self.flat_hr_from_adm.total_seconds()
         self.admission_data_datetime = (self.ref_date + pd.Timedelta(self.adm_measuredat, unit='second'))
@@ -35,13 +35,6 @@ class OMOP_converter(blendedicuTSP):
                 
         self.lf_ts = pl.scan_parquet(self.dir_long_timeseries+'*.parquet')
         self.lf_med = pl.scan_parquet(self.dir_long_medication+'*.parquet')
-        
-        self.start_index = {
-            'observation': 3000000,
-            'domain': 6000000,
-            'care_site': 7000000,
-            'location': 8000000,
-        }
         
         self.visit_concept_ids = {
             'emergency': 9203,  # Visit
@@ -62,15 +55,14 @@ class OMOP_converter(blendedicuTSP):
             'medical_surgical_icu': 4160026,  # SNOMED
             }
         
-        
         self.unit_mapping = self._get_unit_mapping()
         self.units_concept_ids = np.unique([*self.unit_mapping.values()])
         self.concept_unit = self.omop_concept.loc[self.units_concept_ids]
+        self.domain = self.domain_table()
         self.concept, self.concept_table = self._concept_table()
         self.mapping_concepts = self.concept.set_index('concept_name').concept_id.to_dict()
         self.mapping_unit_code_concept = self._mapping_unit_code_concept()
         self.units = self._get_units()
-        self.schemas = cdm.schemas
         
         if initialize_tables:
             self._initialize_tables()
@@ -112,7 +104,6 @@ class OMOP_converter(blendedicuTSP):
         self.person_table()
         self.visit_occurrence_table()
         self.death_table()
-        self.domain_table()
         self.observation_table()
         self.condition_occurrence_table()
         print('   -> Done')
@@ -224,10 +215,10 @@ class OMOP_converter(blendedicuTSP):
         person['location_id'] = (person_labels.source_dataset.map(
                                                         {'amsterdam': 'NL',
                                                          'hirid': 'CH',
-                                                         'mimic': 'US',
+                                                         'mimic4': 'US',
                                                          'mimic3': 'US',
                                                          'eicu': 'US'})
-                                        .map(self.locationid_mapper))
+                                        .map(self.mapping_location))
         self.person = person
         
         self.person_id_mapper = self._id_mapper(person['person_source_value'],
@@ -235,6 +226,8 @@ class OMOP_converter(blendedicuTSP):
         person['person_id'] = person['person_source_value'].map(self.person_id_mapper)
         
         self.person = person
+        
+        self.save(pl.from_pandas(self.person), self.savedir+'PERSON.parquet')
         
     def visit_occurrence_table(self):
         print('Visit Occurrence...')
@@ -296,10 +289,8 @@ class OMOP_converter(blendedicuTSP):
         mapping_person_id =self.person_id_mapper.to_dict()
         mapping_visit_id = self.visit_mapper.to_dict()
         mapping_concept_id =self.concept_mapping.to_dict()
-            
-        lf = self.lf_ts
         
-        lf = (lf
+        lf = ( self.lf_ts
                 .with_columns(
                     self.hash('measurement_id'),
                     pl.col('patient').replace(mapping_person_id, default=0).alias('person_id'),
@@ -355,11 +346,11 @@ class OMOP_converter(blendedicuTSP):
 
         self.observation['observation_type_concept_id'] = 38000280
 
-        start_index = self.start_index['observation']
-        self.observation['observation_id'] = np.arange(start_index,
-                                                       start_index+len(self.observation))
-
         self.observation['observation_date'] = pd.to_datetime(self.observation['observation_date'])
+        
+        obs = pl.from_pandas(self.observation).with_columns(self._hash('observation_id'))
+
+        self.save(obs, self.savedir+'OBSERVATION.parquet')
 
     @staticmethod
     def _hash(alias):
@@ -431,12 +422,7 @@ class OMOP_converter(blendedicuTSP):
         care_site[['care_site_name', 'place_of_service_source_value']] = care_sites
         care_site['care_site_source_value'] = care_site['care_site_name']
 
-        self.locationid_mapper = (self.location[['location_source_value',
-                                                 'location_id']]
-                                  .set_index('location_source_value')
-                                  .to_dict()['location_id'])
-
-        care_site['location_id'] = care_site['care_site_name'].map(self.locationid_mapper).astype(int)
+        care_site['location_id'] = care_site['care_site_name'].map(self.mapping_location).astype(int)
         
         unique_key_cols = ['care_site_name', 'place_of_service_source_value']
         
@@ -468,23 +454,23 @@ class OMOP_converter(blendedicuTSP):
 
     def domain_table(self):
         print('Domain table...')
-        self.domain = cdm.tables['DOMAIN']
 
         domains = {
-            'Visit': 8,
-            'Type Concept': 58,
-            'Observation': 27,
-            'Drug': 13,
-            'Unit': 16,
-            'Measurement': 21
+            'domain_name': ['Visit', 'Type Concept', 'Observation', 'Drug', 'Unit', 'Measurement'],
+            'domain_concept_id': [8, 58, 27, 13, 16, 21]
         }
 
-        self.domain['domain_name'] = domains.keys()
-        self.domain['domain_concept_id'] = self.domain['domain_name'].map(domains)
-
-        start_index = self.start_index['domain']
-        self.domain['domain_id'] = np.arange(start_index, start_index+len(self.domain)).astype(str)
-
+        df_domain = (pl.LazyFrame(domains)
+              .with_columns(
+                  self._hash('domain_id').cast(pl.String)
+            )).collect()
+        
+        self.mapping_domain_id = df_domain.select('domain_name', 'domain_id').to_pandas().set_index('domain_name').domain_id.to_dict()
+        
+        self.save(df_domain, self.savedir+'DOMAIN.parquet')
+        
+        return df_domain
+        
     def _concept_table(self):
         print('Concept_table...')
         concept = cdm.tables['CONCEPT']
@@ -534,6 +520,8 @@ class OMOP_converter(blendedicuTSP):
         concept_data = self.omop_concept.loc[np.unique(concept_ids)].reset_index()
         
         concept = pd.concat([concept, concept_data]).set_index('concept_id', drop=False)
+        
+        concept['domain_id'] = concept['domain_id'].map(self.mapping_domain_id)
 
         concept_mapper = concept.set_index('concept_name')['concept_id']
         return concept, concept_mapper
@@ -558,8 +546,6 @@ class OMOP_converter(blendedicuTSP):
         
         self.save(lf, self.savedir+'/DRUG_STRENGTH.parquet')
         
-
-
     def location_table(self):
         '''
         eicu locations are given as numeric codes. we created a location entry 
@@ -619,13 +605,27 @@ class OMOP_converter(blendedicuTSP):
              'location_source_value': 'CH'},
             ]
 
-        self.location = pd.DataFrame(location_dic_1
+        pd_location = pd.DataFrame(location_dic_1
                                      +location_dic_2
                                      +location_dic_3)
 
-        self.location['location_id'] = (self.start_index['location'] 
-                                        + np.arange(len(self.location)))
-        self.location = self.location.reindex(columns=cdm.tables['LOCATION'].columns)
+        df_location = (pl.from_pandas(pd_location)
+                       .with_columns(
+                           self._hash('location_id')
+                           )
+                       )
+
+        self.location = pl.concat([df_location,
+                                   pl.DataFrame(schema=self.schemas['location'])],
+                                  how='align')
+        self.mapping_location = (self.location
+                                 .select('location_source_value', 'location_id')
+                                 .to_pandas()
+                                 .set_index('location_source_value')
+                                 .location_id
+                                 .to_dict())
+
+        self.save(self.location, self.savedir+'LOCATION.parquet')
 
     def _load_labels(self):
         labels_pth = self.data_pth+'preprocessed_labels.parquet'
@@ -690,7 +690,11 @@ class OMOP_converter(blendedicuTSP):
         for name, table in cdm.tables.items():
             if name.lower() not in ['measurement',
                                     'drug_exposure',
-                                    'drug_strength']:
+                                    'drug_strength',
+                                    'domain',
+                                    'location',
+                                    'person',
+                                    'observation']:
                 self.export_table(table, name)
 
     def export_flat_tables(self):
@@ -702,10 +706,6 @@ class OMOP_converter(blendedicuTSP):
         self.export_table(self.concept, 'CONCEPT')
         self.export_table(self.death, 'DEATH')
         self.export_table(self.care_site, 'CARE_SITE')
-        self.export_table(self.person, 'PERSON')
         self.export_table(self.source_to_concept_map, 'SOURCE_TO_CONCEPT_MAP')
         self.export_table(self.visit_occurrence, 'VISIT_OCCURRENCE')
-        self.export_table(self.domain, 'DOMAIN')
-        self.export_table(self.location, 'LOCATION')
-        self.export_table(self.observation, 'OBSERVATION')
         self.export_table(self.condition_occurrence, 'CONDITION_OCCURRENCE')

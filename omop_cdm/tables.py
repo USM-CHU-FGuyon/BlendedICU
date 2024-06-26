@@ -263,26 +263,26 @@ class CDMTables:
     
     @staticmethod
     def _location_schema():
-        schema = pa.schema([('location_id', pa.int64()),
-                            ('address_1', pa.string()),
-                            ('address_2', pa.string()),
-                            ('city', pa.string()),
-                            ('state', pa.string()),
-                            ('zip', pa.string()),
-                            ('county', pa.string()),
-                            ('location_source_value', pa.string()),
-                            ('country_concept_id', pa.int64()),
-                            ('country_source_value', pa.string()),
-                            ('latitude', pa.float32()),
-                            ('longitude', pa.float32()),
+        schema = OrderedDict([('location_id', pl.Int64),
+                            ('address_1', pl.String),
+                            ('address_2', pl.String),
+                            ('city', pl.String),
+                            ('state', pl.String),
+                            ('zip', pl.String),
+                            ('county', pl.String),
+                            ('location_source_value', pl.String),
+                            ('country_concept_id', pl.Int64),
+                            ('country_source_value', pl.String),
+                            ('latitude', pl.Float32),
+                            ('longitude', pl.Float32),
                             ])
         return schema
     
     @staticmethod
     def _domain_schema():
-        schema = pa.schema([('domain_id', pa.string()),
-                            ('domain_name', pa.string()),
-                            ('domain_concept_id', pa.int32())])
+        schema = OrderedDict([('domain_id', pl.String),
+                              ('domain_name', pl.String),
+                              ('domain_concept_id', pl.Int64)])
         return schema
 
     @staticmethod
