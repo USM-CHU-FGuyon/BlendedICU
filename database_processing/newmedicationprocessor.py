@@ -76,7 +76,7 @@ class NewMedicationProcessor(DataProcessor):
     def _dose_unit_expressions(self):
         exprs = []
         if self.dose_unit_conversion_dic is None:
-            return exprs
+            return exprs, {}
         
         unit_replacements = {old_label: v['omop_code'] for old_label, v in self.dose_unit_conversion_dic.items()}
         
