@@ -28,6 +28,12 @@ class DataProcessor:
         self.diagnoses_pths = {d: self._preprocessed_pth(d, 'diagnoses') for d in self.datasets}
         self.savepath = self.data_pth + self._datadir_name()
         self.raw_as_parquet_pth = self.savepath + '/raw_parquet/'
+        try:
+            if not os.path.exists(self.raw_as_parquet_pth):
+                os.makedirs(self.raw_as_parquet_pth)
+                print(f"Directory '{self.raw_as_parquet_pth}' created.")
+        except OSError:
+            print(f"Creation of the directory '{self.raw_as_parquet_pth}' failed.")
         self.aux_pth = self.pth_dic['auxillary_files']
         self.voc_pth = self.pth_dic['vocabulary']
         self.user_input_pth = self.pth_dic['user_input']
